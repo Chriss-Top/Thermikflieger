@@ -35,7 +35,7 @@ function game() {
   return code => vm.runInContext(code, context);
 }
 test('winch launch, release, neutral glide, and thermal lift', () => game()(`
-  start(); advance(15); assert.equal(phase,'glide'); assert.ok(height>200);
+  start(); advance(18); assert.equal(phase,'glide'); assert.ok(height>200);
   assert.ok(speed>20 && !stalled);
   setup(); const initial=height; advance(1); assert.ok(height<initial);
   setup(); distance=720; advance(.1); assert.ok(vertical>0);
@@ -92,3 +92,44 @@ test('pause freezes physics and camera; restart and both canvas sizes work', () 
   start(); assert.equal(height,0); assert.equal(cameraSpeed,0); assert.equal(stalled,false);
   draw(); W=390;H=844;draw();
 `));
+
+test('elevator steers the winch launch and releasing preserves momentum', () => {
+  const pull = game(), push = game();
+  const up = pull(`start();advance(6);keys.add('ArrowDown');advance(.5);keys.clear();[pitch,height,airVX,airVY]`);
+  const down = push(`start();advance(6);keys.add('ArrowUp');advance(.5);keys.clear();[pitch,height,airVX,airVY]`);
+  assert.ok(up[0] > down[0] + .2);
+  assert.ok(up[1] > down[1]);
+  pull(`const momentum=JSON.stringify([airVX,airVY,pitch,height]);release();
+    assert.equal(phase,'glide');assert.equal(JSON.stringify([airVX,airVY,pitch,height]),momentum);`);
+});
+test('circling stays near a thermal and gains height; bank changes the turn radius', () => game()(`
+  setup(27,500);distance=720;cameraDistance=720;const h=height;
+  toggleCircle();assert.ok(circling);advance(32);
+  assert.ok(height>h+10);assert.ok(!stalled);
+  assert.ok(Math.hypot(distance-720,crossTrack)<250,'circle remains near the thermal');
+  const before=targetBank;keys.add('ArrowRight');advance(.2);keys.clear();assert.ok(targetBank>before);
+  keys.add('ArrowLeft');advance(.5);keys.clear();assert.ok(targetBank<before);
+  toggleCircle();assert.ok(!circling);advance(55);
+  assert.ok(Math.abs(crossTrack)<28,'leaving the circle returns to the runway route');
+`));
+test('thermal centering matters and HUD updates are separate from physics substeps', () => game()(`
+  const core=thermalCore(0,720);
+  assert.ok(thermalAt(core.x,core.z)>thermalAt(core.x,core.z+130)+3);
+  assert.equal(thermalAt(core.x,core.z+210),0);
+  setup();let writes=0;const original=instruments;instruments=()=>writes++;
+  advance(1);assert.equal(writes,0);instruments=original;
+  previous=renderState();const oldX=view().planeX;update(STEP);
+  assert.ok(Math.abs(view(0).planeX-oldX)<.001);
+  assert.ok(Number.isFinite(view(.5).planeX));
+`));
+test('a centered circle climbs substantially more than a circle outside the core', () => {
+  const centered = game(), missed = game();
+  const gain = (run, offset) => run(`
+    setup(27,500);const core=thermalCore(0,720);distance=core.x;cameraDistance=distance;
+    crossTrack=core.z+(${offset});toggleCircle();advance(32);height-500;
+  `);
+  const good = gain(centered, -98), bad = gain(missed, -260);
+  assert.ok(good > 50);
+  assert.ok(bad < 0);
+  assert.ok(good - bad > 80);
+});
