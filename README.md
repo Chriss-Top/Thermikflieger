@@ -12,10 +12,9 @@ Ein 2D-Segelflugspiel in Seitenansicht: Windenstart, Höhenruder, Thermik und La
 - **↑ / W**: drücken, Nase runter. Das Flugzeug nimmt Fahrt auf.
 - Loslassen lässt das Flugzeug sich weich in die Strömung einpendeln. Dauerhaftes Ziehen verbraucht Fahrt und kann zum Strömungsabriss führen; Nase senken, Fahrt aufnehmen und erst dann vorsichtig abfangen.
 - **Leertaste**: starten / neu starten; während des Windenstarts Seil frühzeitig lösen (ab 12 m). Sonst löst es automatisch auf 250 m.
-- **C** oder **Einkurbeln**: Kreisflug beginnen / verlassen.
-- **← / A** und **→ / D**: Schräglage verändern, Kreisradius und Drehrichtung steuern.
+- **← / A** und **→ / D** gedrückt halten: manuell links oder rechts wenden. Zum Gegensteuern rechtzeitig wechseln. Beim Loslassen richtet sich die Tragfläche mit etwas Trägheit wieder aus; die Flugrichtung bleibt bei dir.
 - **P / Escape** oder Pausentaste: Pause.
-- Touchgeräte: **Ziehen**, **Drücken**, **Links**, **Rechts** sowie die Schaltflächen zum Einkurbeln und Seillösen.
+- Touchgeräte: **Ziehen**, **Drücken**, **Links**, **Rechts** sowie **Seil lösen**.
 
 ## Schneller und flüssiger
 
@@ -25,17 +24,25 @@ Das Spiel läuft mit 1,8-fachem Simulationstempo. Ein fester Physikschritt mit 1
 
 Die Winde zieht das Flugzeug zunächst auf Fahrt. **↓** hebt die Nase und macht den Steigflug steiler, **↑** senkt die Nase und nimmt Steigung heraus. Ohne Eingabe unterstützt eine sanfte Trimmung den Start. Übermäßiges Ziehen kann auch am Seil einen Strömungsabriss auslösen. **Leertaste** oder **Seil lösen** klinkt ab 12 m Höhe aus; Fahrt, Nasenlage und Steigbewegung bleiben dabei erhalten. Das Seil löst automatisch auf 250 m oder am Ende der Schleppstrecke.
 
-## Thermik geschickt einkurbeln
+## Thermik manuell ausfliegen
 
-Die Seitenansicht bleibt zweidimensional. Das **Thermikradar** ergänzt eine kleine Draufsicht auf deine horizontale Flugbahn: Der Pfeil zeigt Flugrichtung und Position, goldene Ringe den Aufwind und der dunkle Punkt den stärksten Kern. Die gestrichelte Linie zeigt den Kreis, den du mit aktueller Fahrt und Schräglage ungefähr fliegst.
+Die Seitenansicht bleibt zweidimensional. Das **Thermikradar** zeigt zusätzlich die horizontale Flugbahn: Der Pfeil zeigt deine Flugrichtung, goldene Ringe den Aufwind, der dunkle Punkt den Kern und die grüne Spur deinen bisherigen Weg. Die gestrichelte Linie markiert die Flugplatzstrecke; der blaue Strich zeigt den Wind.
 
-1. In einen goldenen Aufwind einfliegen und **C** drücken.
-2. Mit **← / →** die Schräglage verändern: stärkere Schräglage bedeutet einen engeren Kreis, ein Vorzeichenwechsel ändert die Drehrichtung.
-3. Den Kreis im Radar um den Kern legen. Der Aufwind ist dort stärker als am Rand. Falls der Kreis aus dem Aufwind läuft, Radius und Drehrichtung korrigieren.
-4. Mit dem Höhenruder die Fahrt kontrollieren: Langsamer ergibt einen kleineren Radius, zu langsam oder zu steil führt zum Abriss. Schräglage kostet Auftrieb.
-5. Erneut **C** drücken, um den Kreis zu verlassen. Das Flugzeug kurvt dann sanft zur Flugplatzstrecke zurück; die Höhensteuerung bleibt bei dir.
+1. In den Aufwind einfliegen und das Variometer beobachten.
+2. **← / →** gedrückt halten, um selbst zu wenden. Beim passenden Moment gegensteuern oder die Richtung wechseln, bevor du aus dem Bart fliegst.
+3. Windversatz und den wandernden Kern im Radar beobachten. Du musst deine Flugbahn laufend selbst korrigieren; das Spiel zentriert und hält keinen Kreis.
+4. Mit **↑ / ↓** die Fahrt führen. Zu viel Ziehen kostet Fahrt und kann zum Abriss führen; enge Kurven kosten Auftrieb.
+5. Zur Landung selbst zur gestrichelten Flugplatzstrecke und in Flugrichtung rechts zurückkehren. Es gibt keine automatische Rückkehr.
 
-Der Kreisflug verändert tatsächlich Position, Richtung und Höhe. Es gibt kein Festhalten am Thermikkern und keinen pauschalen Höhenbonus beim Drücken von C. Ein gut zentrierter Kreis kann länger im Aufwind bleiben als ein gerader Durchflug. Die Kerne driften langsam.
+## Endliche Bärte und bewegte Luft
+
+Thermikbärte leben etwa 75–110 Simulationssekunden, werden beim Annähern erzeugt, driften mit dem Wind und verblassen am Ende weich. Die Restdauer steht an der Säule. Derselbe ausgelaufene Bart wird nicht neu erzeugt. Jeder Bart hat zusätzlich eine begrenzte Obergrenze von etwa 640–900 m; nahe dieser Höhe lässt sein Aufwind nach. Neue Gebiete bieten neue Bärte.
+
+Der Wind hat eine wechselnde horizontale und seitliche Komponente sowie stetige Böen. Er verändert die Geschwindigkeit über Grund und versetzt sowohl Flugzeug als auch Thermik. Der Thermikkern driftet etwas langsamer als die Luft: Ein einmal gewählter Kreis bleibt dadurch nicht automatisch zentriert.
+
+Die sichtbaren Hügel erzeugen auf ihrer windzugewandten Seite **Hangaufwind** und auf der windabgewandten Seite **Lee-Abwind**. Diese Felder werden mit Abstand zum Boden schwächer. Gelbe und blaue Markierungen helfen beim Erkennen. Hügel gehören zur Kollisionsfläche; die angezeigte Höhe ist Höhe über Grund.
+
+Die Luftbewegungen wirken auf Anstellwinkel, Auftrieb und Roll- und Nickbewegung. Dadurch wird der Flug unruhiger, während Geschwindigkeit, Höhe und Nasenlage kontinuierlich bleiben.
 
 ## Flugphysik
 
@@ -43,17 +50,17 @@ Das Flugzeug hat eine eigene horizontale und vertikale Geschwindigkeit. Auftrieb
 
 Bei einer Beschleunigung bewegt sich das Flugzeug zunächst nach rechts über den Bildschirm. Die Kamera übernimmt die neue horizontale Geschwindigkeit verzögert: Der Hintergrund zieht dann schneller vorbei. Beim Abbremsen fällt das Flugzeug zunächst nach links zurück. Im Kreisflug ändern sich Flugrichtung und seitliche Projektion. Flugzeug und Landschaft verwenden dieselben Weltkoordinaten.
 
-Bei zu geringer Fahrt oder zu großem Anstellwinkel bricht der Auftrieb zusammen. Das Flugzeug fällt sofort sichtbar nach unten, auch in Thermik. Die Nase fällt nach; durch Senken der Nase und erneuten Fahrtaufbau lässt sich der Abriss ausleiten.
+Bei zu geringer Fahrt oder zu großem Anstellwinkel nimmt der Auftrieb zügig ab. Die Schwerkraft krümmt die Flugbahn nach unten, die Nase kippt mit Drehträgheit nach. Vorhandener Schwung verschwindet dabei nicht schlagartig. Zum Ausleiten Nase senken, Fahrt aufnehmen und anschließend behutsam abfangen. Das Modell bleibt eine vereinfachte Spielphysik.
 
 **Looping:** Zuerst ausreichend Höhe gewinnen, durch einen Abstieg Fahrt aufbauen und dann kontinuierlich **↓** ziehen. Ein kompletter Looping benötigt genug Energie; zu langsames oder zu starkes Ziehen führt zum Strömungsabriss. Die tatsächliche Flugbahn folgt der Nase. Ein vollständiger Looping ist ohne Thermik im automatisierten Test mit 234 km/h und 700 m Ausgangshöhe nachgewiesen; das ist ein Testszenario, keine garantierte Mindestgeschwindigkeit.
 
 ## Prüfen
 
-Mit Node.js: `node --test tests/flight.test.cjs`. Die Szenarien prüfen steuerbaren Windenstart, Ausklinken ohne Geschwindigkeitssprung, Thermik und Zentrierung, Kreisflug und Rückkehr zur Strecke, Fahrt und Kameranachlauf, Strömungsabriss und Erholung, Loopings, Landungen, Pause und Neustart.
+Mit Node.js: `node --test tests/flight.test.cjs`. Die Szenarien prüfen steuerbaren Windenstart, Ausklinken ohne Geschwindigkeitssprung, manuelles Wenden ohne Kreis- oder Streckenautopilot, endliche und höhenbegrenzte Thermik, Windversatz, Hang- und Lee-Felder, Fahrt und Kameranachlauf, Strömungsabriss und Erholung, Loopings, Landungen, Pause und Neustart.
 
 ## Landen
 
-Alle 1,7 km liegt eine 440 m lange Landebahn. Am Boden sind Landebahn, Hangar und Windsack sichtbar; unten steht die Entfernung. Verlasse den Kreis frühzeitig und fliege zur Strecke zurück. Plane den Abstieg rechtzeitig. Setze auf der Bahn mit 55–110 km/h, höchstens 3 m/s Sinken und nahezu waagerechter Nase und Tragfläche auf. Das Flugzeug rollt bis zum Stillstand aus; die verbleibende Bahn muss dafür lang genug sein. Außerhalb der Bahn oder bei einem harten Aufsetzen endet der Flug erfolglos. Flugzeitrekorde werden lokal im Browser gespeichert.
+Alle 1,7 km liegt eine 440 m lange Landebahn. Am Boden sind Landebahn, Hangar und Windsack sichtbar; unten steht die Entfernung. Beende deine Wendemanöver frühzeitig und steuere selbst zur gestrichelten Strecke im Radar zurück. Plane den Abstieg rechtzeitig. Setze auf der Bahn mit 55–110 km/h, höchstens 3 m/s Sinken und nahezu waagerechter Nase und Tragfläche auf. Das Flugzeug rollt bis zum Stillstand aus; die verbleibende Bahn muss dafür lang genug sein. Außerhalb der Bahn oder bei einem harten Aufsetzen endet der Flug erfolglos. Flugzeitrekorde werden lokal im Browser gespeichert.
 
 ## Außerhalb von Codex spielen
 

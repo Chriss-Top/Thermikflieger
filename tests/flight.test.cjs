@@ -35,8 +35,8 @@ function game() {
   return code => vm.runInContext(code, context);
 }
 test('winch launch, release, neutral glide, and thermal lift', () => game()(`
-  start(); advance(18); assert.equal(phase,'glide'); assert.ok(height>200);
-  assert.ok(speed>20 && !stalled);
+  start(); advance(16); assert.equal(phase,'winch'); assert.ok(height>220);
+  assert.ok(speed>25 && !stalled); release(); assert.equal(phase,'glide');
   setup(); const initial=height; advance(1); assert.ok(height<initial);
   setup(); distance=720; advance(.1); assert.ok(vertical>0);
 `));
@@ -50,12 +50,14 @@ test('aircraft responds first, background catches up, and deceleration moves lef
   assert.ok(view().planeX<fastX-5);
   W=390; assert.ok(view().planeX>=W*.14 && view().planeX<=W*.64);
 `));
-test('stall immediately loses height even in thermals, then can recover', () => game()(`
-  setup(8,500,.5); distance=720; const h=height; advance(.1);
-  assert.ok(stalled); assert.ok(vertical<-3); assert.ok(height<h);
-  const stalledY=view().planeY; advance(.2); assert.ok(view().planeY>stalledY);
-  keys.add('ArrowUp'); advance(1); keys.clear(); advance(5);
-  assert.ok(!stalled); assert.ok(speed>18); assert.equal(mode,'flying');
+test('stall sheds lift and pitches down continuously, with recoverable momentum', () => game()(`
+  airAt=()=>({x:0,z:0,up:0,ridge:0});setup(8,500,.5);
+  const beforeV=airVY, beforePitch=pitch;update(STEP);
+  assert.ok(stalled);assert.ok(Math.abs(airVY-beforeV)<.2,'no instantaneous downward velocity jump');
+  assert.ok(Math.abs(pitch-beforePitch)<.02,'no pitch teleport');
+  const initial=height;advance(1.5);assert.ok(vertical<0);assert.ok(height<initial);
+  keys.add('ArrowUp');advance(1);keys.clear();advance(6);
+  assert.ok(!stalled);assert.ok(speed>18);assert.equal(mode,'flying');
 `));
 test('enough entry energy permits an actual full loop without a stall', () => game()(`
   thermalAt = () => 0; setup(65,700,0); keys.add('ArrowDown');
@@ -102,34 +104,46 @@ test('elevator steers the winch launch and releasing preserves momentum', () => 
   pull(`const momentum=JSON.stringify([airVX,airVY,pitch,height]);release();
     assert.equal(phase,'glide');assert.equal(JSON.stringify([airVX,airVY,pitch,height]),momentum);`);
 });
-test('circling stays near a thermal and gains height; bank changes the turn radius', () => game()(`
-  setup(27,500);distance=720;cameraDistance=720;const h=height;
-  toggleCircle();assert.ok(circling);advance(32);
-  assert.ok(height>h+10);assert.ok(!stalled);
-  assert.ok(Math.hypot(distance-720,crossTrack)<250,'circle remains near the thermal');
-  const before=targetBank;keys.add('ArrowRight');advance(.2);keys.clear();assert.ok(targetBank>before);
-  keys.add('ArrowLeft');advance(.5);keys.clear();assert.ok(targetBank<before);
-  toggleCircle();assert.ok(!circling);advance(55);
-  assert.ok(Math.abs(crossTrack)<28,'leaving the circle returns to the runway route');
+test('turning is held-input only, reversals are manual and no route autopilot remains', () => game()(`
+  setup(28,500);crossTrack=180;heading=1;
+  const course=heading;advance(2);assert.ok(Math.abs(heading-course)<.1,'no automatic return to route');
+  assert.ok(crossTrack>180);
+  keys.add('ArrowLeft');advance(1);keys.clear();assert.ok(bank<-.6);
+  keys.add('ArrowRight');advance(1);keys.clear();assert.ok(bank>.6);
+  const held=bank;advance(1.5);assert.ok(Math.abs(bank)<.1,'released steering does not keep circling');
+  assert.equal(typeof toggleCircle,'undefined');
 `));
-test('thermal centering matters and HUD updates are separate from physics substeps', () => game()(`
-  const core=thermalCore(0,720);
-  assert.ok(thermalAt(core.x,core.z)>thermalAt(core.x,core.z+130)+3);
-  assert.equal(thermalAt(core.x,core.z+210),0);
+test('thermal strength fades with age, stops at cloud base, and expired cores never respawn', () => game()(`
+  setup();const core=thermalCore(0,720);
+  assert.ok(thermalAt(core.x,core.z,250)>thermalAt(core.x,core.z+130,250)+3);
+  assert.equal(thermalAt(core.x,core.z,core.ceiling+5),0);
+  const birth=core.born;t=birth+core.lifetime-7;const fading=thermalLife(core);
+  assert.ok(fading>0 && fading<.6);t=birth+core.lifetime+1;
+  assert.equal(thermalLife(core),0);assert.equal(thermalAt(core.x,core.z,250),0);
+  ensureThermals();assert.equal(thermalCore(0,720).born,birth);
+  distance=5000;ensureThermals();assert.ok(thermalLife(thermalCore(3,720))>0);
+`));
+test('wind advects the glider and thermal core and varies smoothly over time', () => {
+  const withWind=game(),stillAir=game();
+  const position=(run,x,z)=>run(`airAt=()=>({x:${x},z:${z},up:0,ridge:0});setup(28,500);advance(1);[distance,crossTrack];`);
+  const windy=position(withWind,5,2),still=position(stillAir,0,0);
+  assert.ok(windy[0]-still[0]>4.8);assert.ok(windy[1]-still[1]>1.8);
+  game()(`setup();const core=thermalCore(0,720),oldX=core.x;advance(1);assert.ok(core.x>oldX+1);
+    const a=windAt(500,200,3),b=windAt(500,200,3+STEP);
+    assert.ok(Math.abs(a.up-b.up)<.03);assert.ok(Math.abs(a.x-b.x)<.03);`);
+});
+test('hills generate windward lift and leeward sink, with attenuation at height', () => game()(`
+  const wind={x:4,z:0,up:0};
+  assert.ok(terrainAt(990)>60);assert.equal(terrainAt(1800),0);
+  assert.ok(ridgeLiftAt(870,100,wind)>1);
+  assert.ok(ridgeLiftAt(1110,100,wind)<-1);
+  assert.ok(Math.abs(ridgeLiftAt(1110,900,wind))<Math.abs(ridgeLiftAt(1110,100,wind))*.1);
+  assert.ok(ridgeLiftAt(1110,100,{x:-4})>0,'wind reversal swaps lift side');
+`));
+test('physics and render interpolation remain independent of HUD writes', () => game()(`
   setup();let writes=0;const original=instruments;instruments=()=>writes++;
   advance(1);assert.equal(writes,0);instruments=original;
   previous=renderState();const oldX=view().planeX;update(STEP);
   assert.ok(Math.abs(view(0).planeX-oldX)<.001);
   assert.ok(Number.isFinite(view(.5).planeX));
 `));
-test('a centered circle climbs substantially more than a circle outside the core', () => {
-  const centered = game(), missed = game();
-  const gain = (run, offset) => run(`
-    setup(27,500);const core=thermalCore(0,720);distance=core.x;cameraDistance=distance;
-    crossTrack=core.z+(${offset});toggleCircle();advance(32);height-500;
-  `);
-  const good = gain(centered, -98), bad = gain(missed, -260);
-  assert.ok(good > 50);
-  assert.ok(bad < 0);
-  assert.ok(good - bad > 80);
-});
