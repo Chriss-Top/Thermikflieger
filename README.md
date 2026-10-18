@@ -10,14 +10,26 @@ Ein 2D-Segelflugspiel in Seitenansicht: Windenstart, Höhenruder, Thermik und La
 
 - **↓ / S / ← / A**: Höhenruder ziehen, Nase hoch. Fahrt wird in Höhe umgesetzt.
 - **↑ / W / → / D**: drücken, Nase runter. Das Flugzeug nimmt Fahrt auf.
-- Loslassen hält die gewählte Nasenlage. Dauerhaftes Ziehen führt zu Fahrtverlust und Strömungsabriss; Nase senken, um sich zu erholen.
+- Loslassen lässt das Flugzeug sich weich in die Strömung einpendeln. Dauerhaftes Ziehen verbraucht Fahrt und kann zum Strömungsabriss führen; Nase senken, Fahrt aufnehmen und erst dann vorsichtig abfangen.
 - **Leertaste**: starten / neu starten; während des Windenstarts Seil frühzeitig lösen (ab 12 m). Sonst löst es automatisch auf 230 m.
 - **P / Escape** oder Pausentaste: Pause.
 - Touchgeräte: **Ziehen** / **Drücken**.
 
-Mit steigender Geschwindigkeit bewegt sich das Flugzeug weich nach rechts im Bildschirm; beim Langsamerwerden fällt es nach links zurück. Die Landschaft bleibt dabei an die tatsächliche Flugstrecke gekoppelt.
+## Flugphysik und Kamera
 
-Die Nase ist der Lagewinkel gegenüber dem Horizont, kein separat simulierter aerodynamischer Anstellwinkel. Thermik verändert die vertikale Luftbewegung. Goldene Säulen markieren den Aufwind; mit weniger Fahrt bleibt man länger darin. Ohne Thermik sinkt das Flugzeug bei normaler Gleitlage.
+Das Flugzeug hat eine eigene horizontale und vertikale Geschwindigkeit. Auftrieb wirkt quer zur Luftströmung, Widerstand bremst, und Schwerkraft wirkt immer nach unten. Nase und Flugbahn können auseinanderliegen; das Instrument zeigt den Anstellwinkel **α** zusätzlich zur Nasenlage an. Die Simulation ist ein vereinfachtes Spielmodell.
+
+Bei einer Beschleunigung bewegt sich das Flugzeug zunächst nach rechts über den Bildschirm. Die Kamera übernimmt die neue horizontale Geschwindigkeit mit einigen Sekunden Verzögerung: Der Hintergrund zieht dann schneller vorbei. Beim Abbremsen fällt das Flugzeug zunächst nach links zurück, während die Landschaft allmählich langsamer wird. Im Rückwärtsabschnitt eines Loopings kehrt sich die horizontale Bewegung um. Flugzeug und Landschaft verwenden dieselben Weltkoordinaten.
+
+Bei zu geringer Fahrt oder zu großem Anstellwinkel bricht der Auftrieb zusammen. Das Flugzeug fällt sofort sichtbar nach unten, auch in Thermik. Die Nase fällt nach; durch Senken der Nase und erneuten Fahrtaufbau lässt sich der Abriss ausleiten.
+
+**Looping:** Zuerst ausreichend Höhe gewinnen, durch einen Abstieg Fahrt aufbauen und dann kontinuierlich **↓** ziehen. Ein kompletter Looping benötigt genug Energie; zu langsames oder zu starkes Ziehen führt zum Strömungsabriss. Es gibt keine Begrenzung auf einen kleinen Nickwinkel und keine kostenlose Drehung: Auch die tatsächliche Flugbahn muss der Nase folgen. Ein vollständiger Looping ist im automatisierten Test mit 234 km/h und 700 m Ausgangshöhe ohne Strömungsabriss nachgewiesen; das ist ein Testszenario, keine garantierte Mindestgeschwindigkeit.
+
+Thermik verändert die vertikale Luftbewegung. Goldene Säulen markieren den Aufwind; mit weniger Fahrt bleibt man länger darin. Ohne Thermik sinkt das Flugzeug bei normaler Gleitlage.
+
+## Prüfen
+
+Mit Node.js: `node --test tests/flight.test.cjs`. Die Szenarien prüfen Windenstart, Thermik, Fahrt und Kameranachlauf, Strömungsabriss und Erholung, vollständige Loopings mit ausreichender und unzureichender Energie, Landungen sowie Pause und Neustart.
 
 ## Landen
 

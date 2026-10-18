@@ -5,7 +5,9 @@ const keys = new Set();
 const G = 9.81, RUNWAY_SPACING = 1700, RUNWAY_LENGTH = 440;
 let W, H, mode = 'intro', paused = false, last = 0, t = 0;
 let elapsed = 0, height = 0, distance = 0, speed = 0, pitch = 0, vertical = 0;
-let screenX = .20;
+let airVX = 0, airVY = 0, cameraDistance = 0, cameraSpeed = 0;
+let angleOfAttack = 0;
+const wrapAngle = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 let phase = 'winch', phaseTime = 0, airLift = 0, stalled = false, landingMessage = '';
 let best = 0;
 try { best = Number(localStorage.getItem('thermik-best')) || 0; } catch {}
@@ -19,7 +21,8 @@ addEventListener('resize', resize); resize();
 function start() {
   mode = 'flying'; paused = false; phase = 'winch'; phaseTime = 0;
   elapsed = 0; height = 0; distance = 0; speed = 0; pitch = 0; vertical = 0;
-  airLift = 0; stalled = false; screenX = .20; keys.clear();
+  airLift = 0; stalled = false; airVX = 0; airVY = 0;
+  cameraDistance = 0; cameraSpeed = 0; angleOfAttack = 0; keys.clear();
   $('#end').classList.add('hidden'); document.body.classList.add('playing');
   $('#pause').textContent = 'Pause'; $('#pause').setAttribute('aria-label', 'Spiel pausieren');
   instruments();
@@ -36,6 +39,7 @@ $('#pause').onclick = togglePause;
 function release() {
   if (mode === 'flying' && !paused && phase === 'winch' && height > 12) {
     phase = 'glide'; pitch = -.04;
+    airVX = speed * Math.cos(pitch); airVY = speed * Math.sin(pitch);
   }
 }
 addEventListener('keydown', e => {
@@ -94,26 +98,49 @@ function update(dt) {
     pitch += ((speed > 19 ? .55 : 0) - pitch) * Math.min(1, dt * 2);
     vertical = speed > 19 ? 21 : 0;
     height += vertical * dt;
-    distance += speed * Math.cos(pitch) * dt;
+    airVX = speed * Math.cos(pitch); airVY = vertical;
+    distance += airVX * dt;
     if (height >= 230) release();
   } else if (phase === 'rollout') {
     vertical = 0; pitch *= Math.exp(-dt * 3); speed = Math.max(0, speed - dt * 6);
-    distance += speed * dt;
+    airVX = speed; airVY = 0; distance += airVX * dt;
     if (speed <= 0) finish(true);
     else if (!onRunway(distance)) { landingMessage = 'Die Landebahn war zu kurz. Setze beim nächsten Mal früher auf.'; finish(false); }
   } else {
-    // Nose-up exchanges airspeed for height; nose-down restores airspeed.
-    pitch = Math.max(-.48, Math.min(.48, pitch + elevator * dt * .42));
-    speed = Math.max(7, Math.min(65, speed + (-G * Math.sin(pitch) - .00065 * speed * speed) * dt));
-    stalled = speed < 16;
-    if (stalled) pitch = Math.max(-.48, pitch - dt * .18);
+    // Integrate air-relative momentum. Lift acts perpendicular to the airflow,
+    // gravity always points down, including during inverted flight.
+    speed = Math.hypot(airVX, airVY);
+    const flightAngle = Math.atan2(airVY, airVX);
+    const authority = Math.min(1.8, speed / 30);
+    if (elevator) pitch += elevator * .45 * authority * dt;
+    else {
+      const trim = (G * Math.cos(flightAngle) / Math.max(2, .02 * speed * speed) - .38) / 4.7;
+      pitch += wrapAngle(flightAngle + Math.max(-.08, Math.min(.18, trim)) - pitch) * dt * .8;
+    }
+    pitch = wrapAngle(pitch);
+    angleOfAttack = wrapAngle(pitch - flightAngle);
+    if (!stalled && (speed < 12 || Math.abs(angleOfAttack) > .32)) stalled = true;
+    else if (stalled && speed > 18 && Math.abs(angleOfAttack) < .18) stalled = false;
     airLift = height > 8 ? thermalAt(distance) : 0;
-    const stallSink = Math.max(0, 16 - speed) * 1.1;
-    vertical = speed * Math.sin(pitch) - .7 - stallSink + airLift;
+    if (stalled) {
+      // Lift collapses immediately; even a strong thermal cannot suspend a stall.
+      airVY = Math.min(airVY, -4 - airLift);
+      pitch += wrapAngle(Math.atan2(airVY, airVX) - pitch) * dt * 1.8;
+      pitch = wrapAngle(pitch);
+    }
+    const v = Math.max(1, Math.hypot(airVX, airVY));
+    const ux = airVX / v, uy = airVY / v;
+    const cl = Math.max(-1.5, Math.min(1.5, .38 + 4.7 * angleOfAttack)) * (stalled ? .08 : 1);
+    const lift = .02 * v * v * cl;
+    const drag = .02 * v * v * (.025 + .045 * cl * cl + (stalled ? .15 : 0));
+    airVX += (-drag * ux - lift * uy) * dt;
+    airVY += (-G - drag * uy + lift * ux) * dt;
+    speed = Math.hypot(airVX, airVY);
+    vertical = airVY + airLift;
     height += vertical * dt;
-    distance += speed * Math.cos(pitch) * dt;
+    distance += airVX * dt;
     if (height <= 0) {
-      const safe = onRunway(distance) && vertical >= -3 && speed >= 14 && speed <= 31 && pitch > -.12 && pitch < .22;
+      const safe = onRunway(distance) && vertical >= -3 && !stalled && airVX > 0 && speed >= 14 && speed <= 31 && pitch > -.12 && pitch < .22;
       height = 0;
       if (safe) { phase = 'rollout'; vertical = 0; }
       else {
@@ -122,30 +149,34 @@ function update(dt) {
       }
     }
   }
-  // Faster flight moves the aircraft right; the camera follows with a gentle lag.
-  const targetX = .20 + .38 * Math.min(1, Math.max(0, speed / 50));
-  screenX += (targetX - screenX) * (1 - Math.exp(-dt * 2));
+  // The aircraft moves first; the camera catches up over several seconds.
+  // One world transform keeps aircraft, runways and scenery in sync.
+  cameraSpeed += (airVX - cameraSpeed) * (1 - Math.exp(-dt / 3));
+  cameraDistance += cameraSpeed * dt;
+  const scale = Math.min(1.1, W / 650);
+  const offset = Math.max(-W * .16 / scale, Math.min(W * .34 / scale, distance - cameraDistance));
+  cameraDistance = distance - offset;
   instruments();
 }
 function instruments() {
   $('#altitude').innerHTML = `${Math.round(height)} <small>m</small>`;
   $('#heightBar').style.width = `${Math.min(100, height / 10)}%`;
   $('#speed').innerHTML = `${Math.round(speed * 3.6)} <small>km/h</small>`;
-  $('#pitch').textContent = `Nase ${pitch >= 0 ? '+' : '−'}${Math.round(Math.abs(pitch) * 180 / Math.PI)}°`;
+  $('#pitch').textContent = `Nase ${Math.round(pitch * 180 / Math.PI)}° · α ${Math.round(angleOfAttack * 180 / Math.PI)}°`;
   $('#time').textContent = formatTime(elapsed);
   $('#vario').innerHTML = `${vertical >= 0 ? '+' : '−'}${Math.abs(vertical).toFixed(1)} <small>m/s</small>`;
   $('#vario').style.color = vertical > 0 ? '#9b792c' : '';
   let status = vertical > .5 ? 'Fahrt wird zu Höhe' : 'Ruhig gleiten';
   if (phase === 'winch') status = height < 10 ? 'Winde zieht an …' : 'Windenstart · Leertaste löst';
   else if (phase === 'rollout') status = 'Landung · Ausrollen';
-  else if (stalled) status = 'Zu langsam! Nase runter ↑';
+  else if (stalled) status = 'Strömungsabriss! Nase runter ↑';
   else if (airLift > 1) status = 'Thermik · langsam durchfliegen';
   else if (height < 70) status = onRunway(distance) ? 'Landebahn unter dir' : 'Flugplatz suchen';
   $('#status').textContent = status;
   const r = runwayAt(distance);
   const next = distance <= r.end ? Math.max(0, r.start - distance) : r.start + RUNWAY_SPACING - distance;
   $('#bottomHint').textContent = paused ? 'Pause · P zum Weiterfliegen' : phase === 'winch' ? 'Windenstart · Seil löst automatisch · Leertaste: früher lösen' : `Flug ${formatTime(elapsed)} · Landebahn: ${Math.round(next)} m · ↓ Ziehen · ↑ Drücken`;
-  $('#thermalNote').textContent = stalled ? '⚠ Zu langsam — Nase senken und Fahrt aufnehmen ↑' : '↑ Thermik! Weniger Fahrt hält dich länger im Aufwind.';
+  $('#thermalNote').textContent = stalled ? '⚠ Strömungsabriss — Nase senken und Fahrt aufnehmen ↑' : '↑ Thermik! Weniger Fahrt hält dich länger im Aufwind.';
   $('#thermalNote').style.opacity = mode === 'flying' && phase === 'glide' && (airLift > 1 || stalled) ? 1 : 0;
 }
 function view() {
@@ -154,7 +185,7 @@ function view() {
   // The aircraft keeps moving vertically, while the camera eases upward at altitude.
   const rise = H * .57 * (1 - Math.exp(-h / 290));
   const ground = base + h * scale - rise;
-  return { scale, ground, planeY: base - rise, planeX: W * (mode === 'intro' ? .66 : screenX) };
+  return { scale, ground, planeY: base - rise, planeX: mode === 'intro' ? W * .66 : W * .30 + (distance - cameraDistance) * scale };
 }
 function cloud(x, y, s) {
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = '#fffdf2';
@@ -175,11 +206,11 @@ function draw() {
   ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#fff7db'; ctx.beginPath(); ctx.arc(W * .76, H * .23, 32, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = .6;
-  for (let i = -1; i < 6; i++) cloud(((i * 310 - distance * .12) % (W + 450) + W + 450) % (W + 450) - 150, H * (.22 + (i % 2) * .1), .7);
+  for (let i = -1; i < 6; i++) cloud(((i * 310 - cameraDistance * .12) % (W + 450) + W + 450) % (W + 450) - 150, H * (.22 + (i % 2) * .1), .7);
   ctx.globalAlpha = 1;
   const cameraShift = ground - H * .82;
-  hills(H * .69 + cameraShift * .12, 35, '#b1c09c', distance * .0003);
-  hills(H * .78 + cameraShift * .3, 30, '#8fab83', 2 + distance * .0007);
+  hills(H * .69 + cameraShift * .12, 35, '#b1c09c', cameraDistance * .0003);
+  hills(H * .78 + cameraShift * .3, 30, '#8fab83', 2 + cameraDistance * .0007);
   ctx.fillStyle = '#86a469'; ctx.fillRect(0, ground, W, Math.max(0, H - ground));
   ctx.fillStyle = '#648752'; ctx.fillRect(0, ground, W, 4);
   for (let i = Math.floor((distance - planeX / scale) / 150) - 1; i < Math.ceil((distance + W / scale) / 150) + 1; i++) {
