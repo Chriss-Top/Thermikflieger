@@ -1,6 +1,6 @@
 # Thermikflieger
 
-Ein 2D-Segelflugspiel in Seitenansicht: Windenstart, Höhenruder, Thermik und Landungen auf wiederkehrenden Flugplätzen. Ohne Installation im Browser spielbar. Die Flugphysik ist bewusst vereinfacht.
+Ein Segelflugspiel in Seitenansicht mit einfacher 3D-Fluggerätedarstellung: Windenstart, Höhenruder, Thermik und Landungen auf wiederkehrenden Flugplätzen. Ohne Installation im Browser spielbar. Die Flugphysik ist bewusst vereinfacht.
 
 ## Starten
 
@@ -8,7 +8,7 @@ Ein 2D-Segelflugspiel in Seitenansicht: Windenstart, Höhenruder, Thermik und La
 
 ## Smartphone
 
-Die Online-Version lässt sich in aktuellen Smartphone-Browsern wie Safari auf iPhone und Chrome auf Android öffnen. Hoch- und Querformat werden unterstützt. Die Bedienung erfolgt über vier große Schaltflächen: Mit einem Daumen **Ziehen / Drücken**, mit dem anderen **Links / Rechts**; beide Eingaben können gleichzeitig gehalten werden. Das Windenseil lässt sich per **Seil lösen** ausklinken.
+Die Online-Version lässt sich in aktuellen Smartphone-Browsern wie Safari auf iPhone und Chrome auf Android öffnen. Hoch- und Querformat werden unterstützt. Die Bedienung erfolgt über vier große Schaltflächen: Mit einem Daumen **Ziehen / Drücken**, mit dem anderen **Links / Rechts**; beide Eingaben können gleichzeitig gehalten werden. Dazu kommen **Luftbremse** (halten) und **Seil lösen**. Auch Luftbremse, Höhenruder und Kurvensteuerung lassen sich gleichzeitig bedienen.
 
 Aussparungen und der Home-Indikator werden über die sicheren Bildschirmränder berücksichtigt. Bei App-Wechsel, Bildschirmdrehung oder Fokusverlust pausiert das Spiel; mit **Weiter** geht es weiter. Die mobile Darstellung und Mehrfingereingaben wurden in Chromium mit Smartphone-Emulation geprüft. Ein Test auf echten iPhones und Android-Geräten steht noch aus.
 
@@ -17,10 +17,34 @@ Aussparungen und der Home-Indikator werden über die sicheren Bildschirmränder 
 - **↓ / S**: Höhenruder ziehen, Nase hoch. Fahrt wird in Höhe umgesetzt.
 - **↑ / W**: drücken, Nase runter. Das Flugzeug nimmt Fahrt auf.
 - Loslassen lässt das Flugzeug sich weich in die Strömung einpendeln. Dauerhaftes Ziehen verbraucht Fahrt und kann zum Strömungsabriss führen; Nase senken, Fahrt aufnehmen und erst dann vorsichtig abfangen.
-- **Leertaste**: starten / neu starten; während des Windenstarts Seil frühzeitig lösen (ab 12 m). Sonst löst es automatisch auf 250 m.
+- **Leertaste halten**: Luftbremse ausfahren; Loslassen fährt sie wieder ein. Sie erhöht Widerstand und Sinken, auch am Windenseil. Beim Gleitschirm entspricht sie einem vereinfachten symmetrischen Bremszug.
+- **R**: Windenseil frühzeitig lösen (ab 12 m). Sonst löst es automatisch auf 250 m, nach 24 Simulationssekunden oder am Ende der Schleppstrecke.
+- **Windenstart / Noch einmal abheben**: starten bzw. neu starten. **Fluggerät / Modus wählen** führt nach dem Flug zurück zur Auswahl.
 - **← / A** und **→ / D** gedrückt halten: manuell links oder rechts wenden. Zum Gegensteuern rechtzeitig wechseln. Beim Loslassen richtet sich die Tragfläche mit etwas Trägheit wieder aus; die Flugrichtung bleibt bei dir.
 - **P / Escape** oder Pausentaste: Pause.
-- Touchgeräte: **Ziehen**, **Drücken**, **Links**, **Rechts** sowie **Seil lösen**.
+- Touchgeräte: **Ziehen**, **Drücken**, **Links**, **Rechts**, **Luftbremse halten** sowie **Seil lösen**. Bei Fokusverlust werden alle gehaltenen Eingaben zurückgesetzt.
+
+## Fluggeräte und Instrumente
+
+Vor jedem Flug lassen sich Fluggerät und Thermikmodus wählen. Die Profile verwenden repräsentative, unballastierte Spielwerte; sie bilden kein Flughandbuch ab. Masse und Fläche beeinflussen den Auftrieb, die Gleitzahl die Widerstandspolare. Abrissfahrt, Rollträgheit, Höhenruderwirkung, Luftbremsen und Windenfahrt unterscheiden sich ebenfalls.
+
+| Fluggerät | Spannweite | Flugmasse | Abrissfahrt | Bestes Gleiten | Fahrt dabei | Min. Sinken ca. | Max. Fahrt im Spiel |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Ka 8 | 15 m | 310 kg | 55 km/h | 27:1 | 75 km/h | 0,65 m/s | 190 km/h |
+| ASK 21 | 17 m | 600 kg | 65 km/h | 34:1 | 95 km/h | 0,65 m/s | 280 km/h |
+| LS4 | 15 m | 450 kg | 68 km/h | 40:1 | 100 km/h | 0,60 m/s | 270 km/h |
+| LS8 | 15 m | 450 kg | 70 km/h | 43:1 | 105 km/h | 0,59 m/s | 280 km/h |
+| Gleitschirm | 10 m | 110 kg | 22 km/h | 9:1 | 37 km/h | 1,1 m/s | 55 km/h |
+
+Die Ka 8 ist leicht und langsam, die ASK 21 ein ruhiger Doppelsitzer. Die LS4 rollt schneller, die LS8 gleitet am besten. Der Gleitschirm reagiert weich, fliegt deutlich langsamer und wird stärker vom Wind versetzt. Seine Nicklage ist begrenzt; Loopings sind damit nicht möglich. Die maximale Fahrt löst eine Warnung und zusätzlichen Widerstand aus. Das minimale Sinken ist ein ungefährer Orientierungswert; Böen, Trimmung und Kurven beeinflussen das tatsächliche Sinken.
+
+Höhen- und Querruderwirkung wachsen mit dem Quadrat der relativen Fahrt bis zu einer Begrenzung. Bei wenig Fahrt wird die Steuerung weich. Der **künstliche Horizont** zeigt Nasen- und Schräglage; die feste gelbe Flugzeugmarke bleibt waagerecht. Die 3D-Modelle zeigen Rollen, Nicken und Flugrichtung: klassische Ka-8-Flügel, längerer ASK-21-Rumpf, schlanke LS4, LS8 mit Winglets und ein Gleitschirm mit Kappe, Leinen und Pilot. Ausgefahrene Luftbremsen sind an den Segelflugzeugen sichtbar. Seitlicher Abstand zum Beobachter verkleinert das Fluggerät perspektivisch; die Bewegung wird zwischen Physikschritten interpoliert.
+
+## Zwei Thermikmodi
+
+**Einfach:** Goldene Aufwindsäulen, animierte Ringe, Restlebensdauer und Thermikradar machen Bärte sichtbar. Hangaufwind und Lee sind markiert.
+
+**Fortgeschritten:** Aufwindsäulen, Kernpositionen, Restlebensdauer und genaue Aufwindwerte im Radar entfallen. Quellwolken über aktiven Bärten, sonnenwarme Bodenflächen, die beleuchtete Luvseite und verschattetes Lee geben Hinweise. Einige Hintergrundwolken liefern keine Thermik. Das Variometer zeigt das tatsächliche Steigen oder Sinken, einschließlich Höhengewinn durch Ziehen; anhaltendes Steigen bei gleichbleibender Fahrt spricht für Aufwind. Die Karte zeigt nur die eigene Flugspur, Strecke und Wind. Die Luftfelder und ihre Lebensdauer sind in beiden Modi gleich.
 
 ## Schneller und flüssiger
 
@@ -28,11 +52,11 @@ Das Spiel läuft mit 1,8-fachem Simulationstempo. Ein fester Physikschritt mit 1
 
 ## Windenstart steuern
 
-Die Winde zieht das Flugzeug zunächst auf Fahrt. **↓** hebt die Nase und macht den Steigflug steiler, **↑** senkt die Nase und nimmt Steigung heraus. Ohne Eingabe unterstützt eine sanfte Trimmung den Start. Übermäßiges Ziehen kann auch am Seil einen Strömungsabriss auslösen. **Leertaste** oder **Seil lösen** klinkt ab 12 m Höhe aus; Fahrt, Nasenlage und Steigbewegung bleiben dabei erhalten. Das Seil löst automatisch auf 250 m oder am Ende der Schleppstrecke.
+Die Winde zieht das Fluggerät zunächst auf eine zum Profil passende Fahrt. **↓** hebt die Nase und macht den Steigflug steiler, **↑** senkt die Nase und nimmt Steigung heraus. Ohne Eingabe unterstützt eine sanfte Trimmung den Start. Übermäßiges Ziehen kann auch am Seil einen Strömungsabriss auslösen. **R** oder **Seil lösen** klinkt ab 12 m Höhe aus; Fahrt, Nasenlage und Steigbewegung bleiben dabei erhalten. Das Seil löst automatisch auf 250 m, nach 24 Simulationssekunden oder am Ende der Schleppstrecke. Auch der Gleitschirm nutzt einen vereinfachten Windenstart.
 
 ## Thermik manuell ausfliegen
 
-Die Seitenansicht bleibt zweidimensional. Das **Thermikradar** zeigt zusätzlich die horizontale Flugbahn: Der Pfeil zeigt deine Flugrichtung, goldene Ringe den Aufwind, der dunkle Punkt den Kern und die grüne Spur deinen bisherigen Weg. Die gestrichelte Linie markiert die Flugplatzstrecke; der blaue Strich zeigt den Wind.
+Die Landschaft bleibt in Seitenansicht, das Fluggerät wird räumlich projiziert. Das **Thermikradar** zeigt zusätzlich die horizontale Flugbahn: Der Pfeil zeigt deine Flugrichtung, im einfachen Modus zeigen goldene Ringe den Aufwind und ein dunkler Punkt den Kern. Die grüne Spur zeigt deinen bisherigen Weg. Die gestrichelte Linie markiert die Flugplatzstrecke; der blaue Strich zeigt den Wind.
 
 1. In den Aufwind einfliegen und das Variometer beobachten.
 2. **← / →** gedrückt halten, um selbst zu wenden. Beim passenden Moment gegensteuern oder die Richtung wechseln, bevor du aus dem Bart fliegst.
@@ -42,11 +66,11 @@ Die Seitenansicht bleibt zweidimensional. Das **Thermikradar** zeigt zusätzlich
 
 ## Endliche Bärte und bewegte Luft
 
-Thermikbärte leben etwa 75–110 Simulationssekunden, werden beim Annähern erzeugt, driften mit dem Wind und verblassen am Ende weich. Die Restdauer steht an der Säule. Derselbe ausgelaufene Bart wird nicht neu erzeugt. Jeder Bart hat zusätzlich eine begrenzte Obergrenze von etwa 640–900 m; nahe dieser Höhe lässt sein Aufwind nach. Neue Gebiete bieten neue Bärte.
+Thermikbärte leben etwa 75–110 Simulationssekunden, werden beim Annähern erzeugt, driften mit dem Wind und verblassen am Ende weich. Im einfachen Modus steht die Restdauer an der Säule. Derselbe ausgelaufene Bart wird nicht neu erzeugt. Jeder Bart hat zusätzlich eine begrenzte Obergrenze von etwa 640–900 m; nahe dieser Höhe lässt sein Aufwind nach. Neue Gebiete bieten neue Bärte.
 
 Der Wind hat eine wechselnde horizontale und seitliche Komponente sowie stetige Böen. Er verändert die Geschwindigkeit über Grund und versetzt sowohl Flugzeug als auch Thermik. Der Thermikkern driftet etwas langsamer als die Luft: Ein einmal gewählter Kreis bleibt dadurch nicht automatisch zentriert.
 
-Die sichtbaren Hügel erzeugen auf ihrer windzugewandten Seite **Hangaufwind** und auf der windabgewandten Seite **Lee-Abwind**. Diese Felder werden mit Abstand zum Boden schwächer. Gelbe und blaue Markierungen helfen beim Erkennen. Hügel gehören zur Kollisionsfläche; die angezeigte Höhe ist Höhe über Grund.
+Die sichtbaren Hügel erzeugen auf ihrer windzugewandten Seite **Hangaufwind** und auf der windabgewandten Seite **Lee-Abwind**. Diese Felder werden mit Abstand zum Boden schwächer. Im einfachen Modus helfen gelbe und blaue Markierungen beim Erkennen; im fortgeschrittenen Modus dienen Bodentönung und Windrichtung als Hinweise. Hügel gehören zur Kollisionsfläche; die angezeigte Höhe ist Höhe über Grund.
 
 Die Luftbewegungen wirken auf Anstellwinkel, Auftrieb und Roll- und Nickbewegung. Dadurch wird der Flug unruhiger, während Geschwindigkeit, Höhe und Nasenlage kontinuierlich bleiben.
 
@@ -62,11 +86,13 @@ Bei zu geringer Fahrt oder zu großem Anstellwinkel nimmt der Auftrieb zügig ab
 
 ## Prüfen
 
-Mit Node.js: `node --test tests/flight.test.cjs`. Die Szenarien prüfen steuerbaren Windenstart, Ausklinken ohne Geschwindigkeitssprung, manuelles Wenden ohne Kreis- oder Streckenautopilot, endliche und höhenbegrenzte Thermik, Windversatz, Hang- und Lee-Felder, Fahrt und Kameranachlauf, Strömungsabriss und Erholung, Loopings, Landungen, Pause und Neustart.
+Mit Node.js: `node --test tests/flight.test.cjs` (oder `node tests/flight.test.cjs` für die einzeln benannten Szenarien). 20 Szenarien prüfen steuerbaren Windenstart, Ausklinken ohne Geschwindigkeitssprung, manuelles Wenden ohne Kreis- oder Streckenautopilot, endliche und höhenbegrenzte Thermik, Windversatz, Hang- und Lee-Felder, Fahrt und Kameranachlauf, Strömungsabriss und Erholung, Loopings, Landungen, Pause und Neustart. Dazu kommen alle fünf Fluggeräte, ihre Polaren und Abrissfahrten, fahrtabhängige Nick- und Rollwirkung, Space/R, gleichzeitige Touch-Brems- und Steuereingaben, Entfernungsprojektion, Schräglage, Horizont-Interpolation und die Hinweise im fortgeschrittenen Modus.
+
+Chromium-Browserprüfung: 1440×900, 390×844, 844×390 und 360×640; Auswahl, Start, künstlicher Horizont, Tastatur, drei gleichzeitige Touchpunkte und überlappungsfreie Horizont-/Steuerflächen wurden geprüft. Diese Emulation ersetzt keinen Test auf echten Geräten.
 
 ## Landen
 
-Alle 1,7 km liegt eine 440 m lange Landebahn. Am Boden sind Landebahn, Hangar und Windsack sichtbar; unten steht die Entfernung. Beende deine Wendemanöver frühzeitig und steuere selbst zur gestrichelten Strecke im Radar zurück. Plane den Abstieg rechtzeitig. Setze auf der Bahn mit 55–110 km/h, höchstens 3 m/s Sinken und nahezu waagerechter Nase und Tragfläche auf. Das Flugzeug rollt bis zum Stillstand aus; die verbleibende Bahn muss dafür lang genug sein. Außerhalb der Bahn oder bei einem harten Aufsetzen endet der Flug erfolglos. Flugzeitrekorde werden lokal im Browser gespeichert.
+Alle 1,7 km liegt eine 440 m lange Landebahn. Am Boden sind Landebahn, Hangar und Windsack sichtbar; unten steht die Entfernung. Beende deine Wendemanöver frühzeitig und steuere selbst zur gestrichelten Strecke im Radar zurück. Plane den Abstieg rechtzeitig und nutze **Space / Luftbremse** zur Gleitwegkorrektur. Setze auf der Bahn oberhalb der profilspezifischen Abrissfahrt, höchstens mit deren 1,75-Fachem, höchstens 3 m/s Sinken und nahezu waagerechter Nase und Tragfläche auf. Beispiel ASK 21: 65–114 km/h; Gleitschirm: 22–39 km/h. Das Fluggerät rollt vereinfacht bis zum Stillstand aus; die verbleibende Bahn muss dafür lang genug sein. Außerhalb der Bahn oder bei einem harten Aufsetzen endet der Flug erfolglos. Flugzeitrekorde werden lokal im Browser gespeichert.
 
 ## Außerhalb von Codex spielen
 

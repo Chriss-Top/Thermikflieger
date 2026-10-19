@@ -6,21 +6,23 @@ const fs = require('node:fs');
 const path = require('node:path');
 function game() {
   const elements = new Map();
+  const listeners = new Map();
   const noop = () => {};
   const ctx = new Proxy({ createLinearGradient: () => ({ addColorStop: noop }) }, {
     get: (o, k) => o[k] || noop, set: (o, k, v) => (o[k] = v, true)
   });
   const element = selector => {
     if (!elements.has(selector)) elements.set(selector, {
-      style: {}, classList: { add: noop, remove: noop }, getContext: () => ctx,
-      setAttribute: noop, setPointerCapture: noop, textContent: ''
+      style: {}, attrs: {}, classList: { add: noop, remove: noop }, getContext: () => ctx,
+      setAttribute(key,value) { this.attrs[key]=value; }, setPointerCapture: noop, textContent: ''
     });
     return elements.get(selector);
   };
   const context = vm.createContext({
     document: { querySelector: element, body: { classList: { add: noop } } },
     innerWidth: 1440, innerHeight: 900, devicePixelRatio: 1,
-    addEventListener: noop, requestAnimationFrame: noop,
+    addEventListener: (name,callback) => listeners.set(name,callback), requestAnimationFrame: noop,
+    dispatch: (name,event) => listeners.get(name)(event),
     localStorage: { getItem: () => 0, setItem: noop }, assert
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../game.js'), 'utf8'), context);
@@ -165,4 +167,65 @@ test('viewport changes preserve the flight while resetting render interpolation'
   innerWidth=390;innerHeight=844;resize();assert.equal(W,390);assert.equal(H,844);assert.equal(previous,null);draw();
   innerWidth=844;innerHeight=390;resize();draw();
   assert.equal(JSON.stringify([distance,height,airVX,airVY]),state);
+`));
+
+test('all five profiles launch, glide, stall at their own limit and render distinct meshes', () => game()(`
+  const shapes=new Set(), polar=[];
+  for (const [id,profile] of Object.entries(AIRCRAFT)) {
+    $('#aircraft').value=id;start();advance(16);
+    assert.equal(aircraft,profile);assert.equal(mode,'flying',id);
+    assert.ok(hasLifted && height>40,id+' must launch');assert.ok(!stalled,id+' launch stall');
+    release();assert.equal(phase,'glide');advance(2);assert.equal(mode,'flying');
+    const a=aeroProfile(),cl=G/(a.liftFactor*(profile.bestSpeed/3.6)**2);
+    assert.ok(Math.abs(cl/(a.cd0+a.induced*cl*cl)-profile.glide)<.01);
+    polar.push(profile.glide);shapes.add(JSON.stringify(aircraftMesh()));
+    for (const yaw of [0,Math.PI/2,Math.PI]) plane(200,200,.1,.7,yaw,.6);
+    setup(profile.stall/3.6-.1,400,0);update(STEP);assert.ok(stalled,id+' stall threshold');
+  }
+  assert.equal(shapes.size,5);assert.equal(polar.length,5);
+`));
+test('both pitch and roll respond more strongly with airspeed for every profile', () => game()(`
+  airAt=()=>({x:0,z:0,up:0,ridge:0});
+  for(const [id,p] of Object.entries(AIRCRAFT)) {
+    $('#aircraft').value=id;setup(p.bestSpeed/3.6,500,0);
+    const low=controlAuthority();keys.add('ArrowDown');keys.add('ArrowRight');advance(.12);
+    const lowPitch=pitch,lowBank=bank;
+    setup(p.bestSpeed/3.6*1.5,500,0);
+    assert.ok(controlAuthority()>low);keys.add('ArrowDown');keys.add('ArrowRight');advance(.12);
+    assert.ok(pitch>lowPitch*1.25,id+' pitch authority');assert.ok(bank>lowBank*1.25,id+' roll authority');
+  }
+`));
+test('held Space brakes, R releases with continuous momentum, and buttons retain keyboard activation', () => game()(`
+  airAt=()=>({x:0,z:0,up:0,ridge:0});setup(32,400,0);
+  const event=code=>({code,preventDefault(){},repeat:false});
+  dispatch('keydown',event('Space'));assert.ok(braking());advance(.5);const braked=speed;
+  dispatch('keyup',event('Space'));assert.ok(!braking());
+  setup(32,400,0);advance(.5);assert.ok(speed>braked+1);
+  start();height=50;airVX=30;airVY=3;
+  dispatch('keydown',event('Space'));assert.equal(phase,'winch');
+  dispatch('keyup',event('Space'));const before=JSON.stringify([airVX,airVY,pitch,height]);
+  dispatch('keydown',event('KeyR'));assert.equal(phase,'glide');
+  assert.equal(JSON.stringify([airVX,airVY,pitch,height]),before);
+  keys.clear();dispatch('keydown',{...event('Space'),target:{tagName:'BUTTON'}});assert.equal(keys.size,0);
+`));
+test('touch brake works together with both steering axes and releases safely', () => game()(`
+  setup();const e=id=>({pointerId:id,preventDefault(){}});
+  $('#brake').onpointerdown(e(1));$('#left').onpointerdown(e(2));$('#bankRight').onpointerdown(e(3));
+  assert.ok(braking() && keys.has('ArrowDown') && keys.has('ArrowRight'));
+  $('#brake').onpointercancel(e(1));assert.ok(!braking() && keys.has('ArrowDown'));
+  $('#brake').onpointerdown(e(4));suspend();assert.ok(!braking() && keys.size===0);
+  start();assert.ok(touchControls.every(c=>c.pointers.size===0));
+`));
+test('distance projection, true bank geometry, interpolated horizon and advanced mode conceal lift markers', () => game()(`
+  setup();assert.ok(aircraftScale(300)<aircraftScale(0));assert.ok(aircraftScale(-100)>aircraftScale(0));
+  const flat=projectAircraft([0,60,0],0,0,0),rolled=projectAircraft([0,60,0],0,0,.6);
+  assert.ok(Math.abs(rolled.y-flat.y)>20);
+  previous=renderState();bank=.8;pitch=.2;crossTrack=300;draw(.5);
+  assert.ok($('#horizonWorld').attrs.transform.includes('rotate(-22.918'));
+  assert.equal(renderState(.5).crossTrack,150);
+  pitch=Math.PI;bank=0;draw();assert.ok($('#horizonWorld').attrs.transform.includes('rotate(-180)'));
+  $('#thermalMode').value='advanced';start();phase='glide';airLift=7;height=400;vertical=-1;
+  instruments();assert.equal(thermalMode,'advanced');assert.equal($('#thermalNote').style.opacity,0);
+  assert.ok(!$('#status').textContent.includes('Aufwind'));draw();
+  $('#thermalMode').value='easy';start();assert.equal(thermalMode,'easy');
 `));
