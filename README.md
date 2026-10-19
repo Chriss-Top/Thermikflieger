@@ -6,6 +6,12 @@ Ein 2D-Segelflugspiel in Seitenansicht: Windenstart, Höhenruder, Thermik und La
 
 `index.html` im Browser öffnen oder `python3 -m http.server 8000` im Projektverzeichnis starten. HTML, CSS und JavaScript müssen im selben Ordner liegen. Webfonts sind optional; Ersatzschriften funktionieren offline.
 
+## Smartphone
+
+Die Online-Version lässt sich in aktuellen Smartphone-Browsern wie Safari auf iPhone und Chrome auf Android öffnen. Hoch- und Querformat werden unterstützt. Die Bedienung erfolgt über vier große Schaltflächen: Mit einem Daumen **Ziehen / Drücken**, mit dem anderen **Links / Rechts**; beide Eingaben können gleichzeitig gehalten werden. Das Windenseil lässt sich per **Seil lösen** ausklinken.
+
+Aussparungen und der Home-Indikator werden über die sicheren Bildschirmränder berücksichtigt. Bei App-Wechsel, Bildschirmdrehung oder Fokusverlust pausiert das Spiel; mit **Weiter** geht es weiter. Die mobile Darstellung und Mehrfingereingaben wurden in Chromium mit Smartphone-Emulation geprüft. Ein Test auf echten iPhones und Android-Geräten steht noch aus.
+
 ## Steuerung
 
 - **↓ / S**: Höhenruder ziehen, Nase hoch. Fahrt wird in Höhe umgesetzt.

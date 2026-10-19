@@ -1,7 +1,9 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#b9dce3">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Thermikflieger · Ein endloser Sommertag</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -9,7 +11,7 @@
 <canvas id="sky" aria-label="Segelflugspiel in Seitenansicht über einer Sommerlandschaft"></canvas>
 <header><a class="brand" href="./"><span class="symbol">〰</span> THERMIKFLIEGER</a><span class="edition">EIN ENDLOSER SOMMERTAG</span><button id="pause" aria-label="Spiel pausieren">Pause</button></header>
 <main>
-<section class="intro" id="intro"><div class="eyebrow">DEN HIMMEL FÜR DICH.</div><h1>Einfach mal<br><em>oben bleiben.</em></h1><p>Ein kleines Flugzeug. Ein weiter Sommerhimmel.<br>Starte an der Winde. Finde Thermik.<br>Kurble dich im Aufwind nach oben.</p><button class="primary" id="start">Windenstart <span>↗</span></button><div class="hint"><kbd>↓</kbd> Ziehen · <kbd>↑</kbd> Drücken · manuell kurbeln<br><kbd>←</kbd><kbd>→</kbd> Wenden · P Pause</div></section>
+<section class="intro" id="intro"><div class="eyebrow">DEN HIMMEL FÜR DICH.</div><h1>Einfach mal<br><em>oben bleiben.</em></h1><p>Ein kleines Flugzeug. Ein weiter Sommerhimmel.<br>Starte an der Winde. Finde Thermik.<br>Kurble dich im Aufwind nach oben.</p><button class="primary" id="start">Windenstart <span>↗</span></button><div class="mobile-hint">Mit beiden Daumen: Ziehen / Drücken und Links / Rechts.</div><div class="hint"><kbd>↓</kbd> Ziehen · <kbd>↑</kbd> Drücken · manuell kurbeln<br><kbd>←</kbd><kbd>→</kbd> Wenden · P Pause</div></section>
 <section class="instruments" aria-label="Fluginstrumente"><div><span>HÖHE Ü. GRUND</span><strong id="altitude">0 <small>m</small></strong><div class="track"><i id="heightBar"></i></div><small id="wind">Wind 0 km/h</small></div><div><span>GESCHWINDIGKEIT</span><strong id="speed">0 <small>km/h</small></strong><small id="pitch">Nase 0°</small></div><div><span>FLUGZEIT</span><strong id="time">00:00</strong><small>Jeder Moment zählt.</small></div><div><span>VARIOMETER</span><strong id="vario">0.0 <small>m/s</small></strong><small id="status">Bereit zum Windenstart</small></div></section>
 <div class="thermal-note" id="thermalNote">↑ Du bist in der Thermik. Bleib ein bisschen.</div>
 <section class="end hidden" id="end"><div class="eyebrow">WIEDER AUF DER ERDE</div><h2 id="endTitle">Ein schöner Flug.</h2><p id="result"></p><p id="record"></p><button class="primary" id="restart">Noch einmal abheben <span>↗</span></button></section>

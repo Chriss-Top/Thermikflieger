@@ -7,6 +7,7 @@ const STEP = 1 / 120, GAME_TEMPO = 1.8;
 let accumulator = 0, hudClock = 0, previous = null;
 let heading = 0, bank = 0, targetBank = 0, crossTrack = 0, hasLifted = false;
 const worldScale = () => Math.min(2, Math.max(.8, W / 550));
+let radarRight = 24, radarBottom = 134;
 let W, H, mode = 'intro', paused = false, last = 0, t = 0;
 let elapsed = 0, height = 0, distance = 0, speed = 0, pitch = 0, vertical = 0;
 let airVX = 0, airVY = 0, cameraDistance = 0, cameraSpeed = 0;
@@ -22,10 +23,17 @@ try { best = Number(localStorage.getItem('thermik-best')) || 0; } catch {}
 function resize() {
   W = innerWidth; H = innerHeight;
   const dpr = Math.min(devicePixelRatio || 1, 2);
+  previous = null;
+  if (typeof getComputedStyle === 'function') {
+    radarRight = Math.max(24, (parseFloat(getComputedStyle($('header')).paddingRight) || 0) + 6);
+    radarBottom = Math.max(134, (parseFloat(getComputedStyle($('#touch')).bottom) || 0) + 120);
+  }
   canvas.width = W * dpr; canvas.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-addEventListener('resize', resize); resize();
+addEventListener('resize', resize);
+if (typeof visualViewport !== 'undefined') visualViewport.addEventListener('resize', resize);
+resize();
 function start() {
   mode = 'flying'; paused = false; phase = 'winch'; phaseTime = 0;
   elapsed = 0; height = 0; distance = 0; speed = 0; pitch = 0; vertical = 0;
@@ -62,11 +70,28 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { if (mode !== 'flying') start(); else release(); }
 });
 addEventListener('keyup', e => keys.delete(e.code));
-addEventListener('blur', () => { keys.clear(); if (mode === 'flying' && !paused) togglePause(); });
+function suspend() {
+  keys.clear();
+  for (const control of touchControls) { control.pointers.clear(); control.button.classList.remove('held'); }
+  if (mode === 'flying' && !paused) togglePause();
+}
+addEventListener('blur', suspend);
+addEventListener('orientationchange', () => { suspend(); resize(); });
+if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', () => { if (document.hidden) suspend(); });
+const touchControls = [];
 for (const [id, key] of [['left', 'ArrowDown'], ['right', 'ArrowUp'], ['bankLeft', 'ArrowLeft'], ['bankRight', 'ArrowRight']]) {
   const b = $('#' + id);
-  b.onpointerdown = e => { e.preventDefault(); b.setPointerCapture(e.pointerId); keys.add(key); };
-  b.onpointerup = b.onpointercancel = b.onlostpointercapture = () => keys.delete(key);
+  const pointers = new Set();
+  touchControls.push({ button: b, pointers });
+  b.onpointerdown = e => {
+    e.preventDefault(); pointers.add(e.pointerId); b.setPointerCapture(e.pointerId);
+    keys.add(key); b.classList.add('held');
+  };
+  b.onpointerup = b.onpointercancel = b.onlostpointercapture = e => {
+    pointers.delete(e.pointerId);
+    if (!pointers.size) { keys.delete(key); b.classList.remove('held'); }
+  };
+  b.oncontextmenu = e => e.preventDefault();
 }
 $('#release').onclick = release;
 function windAt(x, h, time = t) {
@@ -277,12 +302,17 @@ function renderState(alpha = 1) {
   for (const key of ['pitch', 'heading', 'bank']) current[key] = previous[key] + wrapAngle(current[key] - previous[key]) * alpha;
   return current;
 }
+function touchLayout() {
+  return W <= 700 || (H <= 500 && W <= 1100) || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
+}
 function view(alpha = 1) {
   const state = renderState(alpha);
-  const scale = worldScale(), base = H * .82;
+  const mobile = touchLayout();
+  const scale = worldScale(), base = mobile ? H - Math.max(110, H * .18) : H * .82;
   const h = mode === 'intro' ? 135 : state.height;
   // The aircraft keeps moving vertically, while the camera eases upward at altitude.
-  const rise = H * .57 * (1 - Math.exp(-h / 290));
+  const maxRise = mobile ? Math.min(H * .57, base - (H <= 500 ? 128 : 190)) : H * .57;
+  const rise = maxRise * (1 - Math.exp(-h / 290));
   const ground = base + h * Math.min(1.1, W / 650) - rise;
   return { scale, ground, planeY: base - rise, planeX: mode === 'intro' ? W * .66 : W * .30 + (state.distance - state.cameraDistance) * scale, state };
 }
@@ -400,8 +430,11 @@ function plane(x, y, angle, s, yaw = 0, roll = 0) {
   ctx.fillStyle = '#43534c'; ctx.beginPath(); ctx.arc(0, 7, 3, 0, Math.PI * 2); ctx.fill(); ctx.restore();
 }
 function drawRadar() {
-  const size = W < 700 ? 120 : 160;
-  const x = W < 700 ? W - size - 18 : 35, y = H - size - (W < 700 ? 145 : 75);
+  const mobile = touchLayout();
+  const compact = mobile && H <= 500;
+  const size = compact ? 82 : mobile ? 108 : 160;
+  const x = mobile ? W - size - radarRight : 35;
+  const y = mobile ? Math.max(compact ? 132 : 200, H - size - radarBottom) : H - size - 75;
   const cx = x + size / 2, cy = y + size / 2, zoom = size / 650;
   ctx.save(); ctx.fillStyle = '#fffdf0f2'; ctx.fillRect(x, y, size, size);
   ctx.beginPath(); ctx.rect(x, y, size, size); ctx.clip();
@@ -426,9 +459,9 @@ function drawRadar() {
   ctx.lineTo(x + 12 + localWind.x * 4, y + 12 + localWind.z * 4); ctx.stroke();
   ctx.translate(cx, cy); ctx.rotate(heading); ctx.fillStyle = '#234e46';
   ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-5, -5); ctx.lineTo(-2, 0); ctx.lineTo(-5, 5); ctx.closePath(); ctx.fill();
-  ctx.restore(); ctx.fillStyle = '#385d4e'; ctx.font = '9px sans-serif';
-  ctx.fillText(`THERMIKRADAR · ${airLift.toFixed(1)} m/s`, x, y - 9);
-  ctx.fillText('← / → wenden · Wind beachten', x, y + size + 15);
+  ctx.restore(); ctx.fillStyle = '#385d4e'; ctx.font = mobile ? '8px sans-serif' : '9px sans-serif';
+  ctx.fillText(`${compact ? 'LUFT' : 'THERMIKRADAR'} · ${airLift.toFixed(1)} m/s`, x, y - 9);
+  ctx.fillText(compact ? '← / → wenden' : mobile ? '← / → gegensteuern' : '← / → wenden · Wind beachten', x, y + size + 15);
 }
 function frame(now) {
   const dt = Math.min((now - last) / 1000 || 0, .1); last = now;

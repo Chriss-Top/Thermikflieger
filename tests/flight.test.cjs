@@ -147,3 +147,22 @@ test('physics and render interpolation remain independent of HUD writes', () => 
   assert.ok(Math.abs(view(0).planeX-oldX)<.001);
   assert.ok(Number.isFinite(view(.5).planeX));
 `));
+test('touch steering supports independent fingers, pointer cancellation and focus loss', () => game()(`
+  start();
+  const event=id=>({pointerId:id,preventDefault(){}});
+  $('#left').onpointerdown(event(1));$('#bankRight').onpointerdown(event(2));
+  assert.ok(keys.has('ArrowDown')&&keys.has('ArrowRight'));
+  $('#left').onpointerup(event(1));assert.ok(!keys.has('ArrowDown')&&keys.has('ArrowRight'));
+  $('#bankRight').onpointercancel(event(2));assert.ok(!keys.has('ArrowRight'));
+  $('#left').onpointerdown(event(3));$('#left').onpointerdown(event(4));
+  $('#left').onpointerup(event(3));assert.ok(keys.has('ArrowDown'));
+  $('#left').onlostpointercapture(event(4));assert.ok(!keys.has('ArrowDown'));
+  $('#bankLeft').onpointerdown(event(5));suspend();
+  assert.ok(paused&&keys.size===0);assert.ok(touchControls.every(control=>control.pointers.size===0));
+`));
+test('viewport changes preserve the flight while resetting render interpolation', () => game()(`
+  setup();advance(.5);const state=JSON.stringify([distance,height,airVX,airVY]);previous=renderState();
+  innerWidth=390;innerHeight=844;resize();assert.equal(W,390);assert.equal(H,844);assert.equal(previous,null);draw();
+  innerWidth=844;innerHeight=390;resize();draw();
+  assert.equal(JSON.stringify([distance,height,airVX,airVY]),state);
+`));
