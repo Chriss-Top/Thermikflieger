@@ -229,3 +229,48 @@ test('distance projection, true bank geometry, interpolated horizon and advanced
   assert.ok(!$('#status').textContent.includes('Aufwind'));draw();
   $('#thermalMode').value='easy';start();assert.equal(thermalMode,'easy');
 `));
+
+test('left and right commands turn from the pilot perspective in all four headings', () => game()(`
+  airAt=()=>({x:0,z:0,up:0,ridge:0});
+  for(const course of [0,Math.PI/2,Math.PI,-Math.PI/2]) for(const side of [-1,1]) {
+    setup(28,500,0);heading=course;const x=distance,z=crossTrack;
+    keys.add(side>0 ? 'ArrowRight' : 'ArrowLeft');advance(.7);
+    assert.ok(wrapAngle(heading-course)*side < -.025,'course turns toward commanded side');
+    const rightward=(distance-x)*Math.sin(course)-(crossTrack-z)*Math.cos(course);
+    assert.ok(rightward*side>.2,'motion is to the pilot side, independent of observer');
+    assert.ok(bank*side>.6,'commanded wing is lowered');
+  }
+  for(const yaw of [0,Math.PI]) {
+    const flatRight=projectAircraft([0,-60,0],0,yaw,0),right=projectAircraft([0,-60,0],0,yaw,.5);
+    const flatLeft=projectAircraft([0,60,0],0,yaw,0),left=projectAircraft([0,60,0],0,yaw,.5);
+    assert.ok(right.y>flatRight.y+20);assert.ok(left.y<flatLeft.y-20);
+  }
+`));
+test('analog instruments follow flight data with correct sign, range and aircraft scale', () => game()(`
+  setup();speed=100/3.6;vertical=2;draw();instruments();
+  assert.equal($('#speed').textContent,'100');assert.equal($('#vario').textContent,'+2.0');
+  assert.equal($('#speedNeedle').attrs.transform,'rotate(-50)');
+  assert.equal($('#varioNeedle').attrs.transform,'rotate(-36)');
+  vertical=-2;draw();assert.equal($('#varioNeedle').attrs.transform,'rotate(-144)');
+  assert.equal(varioNeedleAngle(10),varioNeedleAngle(5));assert.equal(varioNeedleAngle(-10),varioNeedleAngle(-5));
+  $('#aircraft').value='paraglider';start();assert.equal(gaugeSettings().maximum,80);
+  speed=40/3.6;draw();assert.equal($('#speedNeedle').attrs.transform,'rotate(0)');
+  assert.ok($('#speedScale').innerHTML.includes('#ed6d58'),'red maximum-speed line');
+  assert.ok($('#speedScale').innerHTML.includes('#78b88a'),'normal operating arc');
+`));
+test('airframes preserve original span-length ratios, wing heights and tail types', () => game()(`
+  for(const [id,length] of [['ka8',7],['ask21',8.35],['ls4',6.66],['ls8',6.72]]) {
+    $('#aircraft').value=id;start();const mesh=aircraftMesh();
+    const body=mesh.filter(f=>f.part==='fuselage').flatMap(f=>f.points);
+    const wing=mesh.filter(f=>f.part==='wing').flatMap(f=>f.points);
+    assert.ok(Math.abs((Math.max(...body.map(p=>p[0]))-Math.min(...body.map(p=>p[0])))/15-length)<.001);
+    assert.ok(Math.abs((Math.max(...wing.map(p=>p[1]))-Math.min(...wing.map(p=>p[1])))/15-aircraft.span)<.001);
+    const area=mesh.filter(f=>f.part==='wing').reduce((total,face)=>total+Math.abs(face.points.reduce((sum,p,i)=>{const q=face.points[(i+1)%face.points.length];return sum+p[0]*q[1]-q[0]*p[1];},0))/2,0)/225;
+    assert.ok(Math.abs(area-aircraft.area)<.001,'wing planform matches original wing area');
+    const tail=mesh.filter(f=>f.part==='tailplane').flatMap(f=>f.points);
+    assert.ok(id==='ka8' ? Math.max(...tail.map(p=>p[2]))<3 : Math.min(...tail.map(p=>p[2]))>15);
+    assert.equal(mesh.some(f=>f.part==='winglet'),id==='ls8');
+    assert.equal(mesh.some(f=>f.part==='fabric-rib'),id==='ka8');
+    keys.add('Space');assert.ok(aircraftMesh().some(f=>f.part==='airbrake'));
+  }
+`));

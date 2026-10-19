@@ -13,6 +13,45 @@ const AIRCRAFT = {
   paraglider: { name: 'Gleitschirm', span: 10, area: 26, mass: 110, stall: 22, bestSpeed: 37, glide: 9, minSink: 1.1, maxSpeed: 55, roll: 1.5, elevator: .18, brake: .22, color: '#e38a43', shape: 'canopy', description: 'Langsam und weich · Pendelbewegung, enge Kreise, windempfindlich' }
 };
 let aircraft = AIRCRAFT.ask21, thermalMode = 'easy', overspeed = false;
+function gaugeSettings() {
+  const maximum = aircraft.shape === 'canopy' ? 80 : aircraft.maxSpeed <= 220 ? 220 : 300;
+  return { maximum, major: maximum === 80 ? 10 : maximum === 220 ? 20 : 50, minor: maximum === 80 ? 2 : 10 };
+}
+function speedNeedleAngle(kmh) { return -150 + Math.max(0, Math.min(gaugeSettings().maximum, kmh)) / gaugeSettings().maximum * 300; }
+function varioNeedleAngle(ms) { return -90 + Math.max(-5, Math.min(5, ms)) * 27; }
+function gaugePoint(angle, radius) {
+  const a = angle * Math.PI / 180;
+  return [Math.sin(a) * radius, -Math.cos(a) * radius];
+}
+function gaugeArc(from, to, radius, color, width = 3) {
+  const a = gaugePoint(from, radius), b = gaugePoint(to, radius);
+  return `<path d="M${a} A${radius} ${radius} 0 ${to - from > 180 ? 1 : 0} 1 ${b}" fill="none" stroke="${color}" stroke-width="${width}"/>`;
+}
+function gaugeTick(angle, major, label) {
+  const a = gaugePoint(angle, major ? 39 : 43), b = gaugePoint(angle, 47), c = gaugePoint(angle, 31);
+  return `<path d="M${a} L${b}" stroke="#f6f3df" stroke-width="${major ? 1.4 : .7}"/>` + (label === undefined ? '' : `<text x="${c[0]}" y="${c[1]}" text-anchor="middle" dominant-baseline="central" fill="#f6f3df" font-size="7" font-family="sans-serif">${label}</text>`);
+}
+function buildDials() {
+  const scale = gaugeSettings();
+  let marks = gaugeArc(speedNeedleAngle(aircraft.stall * 1.1), speedNeedleAngle(aircraft.maxSpeed * .75), 50, '#78b88a');
+  marks += gaugeArc(speedNeedleAngle(aircraft.maxSpeed * .75), speedNeedleAngle(aircraft.maxSpeed), 50, '#e6c76c');
+  marks += gaugeArc(speedNeedleAngle(aircraft.stall), speedNeedleAngle(aircraft.stall * 1.5), 53, '#f4f0dd', 2);
+  for (let n = 0; n <= scale.maximum; n += scale.minor) {
+    const major = n % scale.major === 0;
+    marks += gaugeTick(speedNeedleAngle(n), major, major ? n : undefined);
+  }
+  const a = gaugePoint(speedNeedleAngle(aircraft.maxSpeed), 44), b = gaugePoint(speedNeedleAngle(aircraft.maxSpeed), 55);
+  $('#speedScale').innerHTML = marks + `<path d="M${a} L${b}" stroke="#ed6d58" stroke-width="2"/>`;
+  marks = '';
+  for (let n = -25; n <= 25; n++) marks += gaugeTick(varioNeedleAngle(n / 5), n % 5 === 0, n % 5 === 0 ? Math.abs(n / 5) : undefined);
+  $('#varioScale').innerHTML = marks;
+  marks = '';
+  for (const angle of [-60,-45,-30,-20,-10,0,10,20,30,45,60]) {
+    const a = gaugePoint(angle, 49), b = gaugePoint(angle, Math.abs(angle) % 30 === 0 ? 56 : 53);
+    marks += `<path d="M${a} L${b}" stroke="#f5f0d8" stroke-width="1.2"/>`;
+  }
+  $('#bankScale').innerHTML = marks;
+}
 function aeroProfile() {
   const liftFactor = .02 * (aircraft.area / aircraft.mass) / (17.95 / 600);
   const optimalCL = G / (liftFactor * (aircraft.bestSpeed / 3.6) ** 2);
@@ -27,6 +66,7 @@ function configure() {
   thermalMode = $('#thermalMode').value === 'advanced' ? 'advanced' : 'easy';
   $('#aircraftInfo').textContent = `${aircraft.description}. ${aircraft.span} m · ${aircraft.mass} kg · Abriss ${aircraft.stall} km/h · bestes Gleiten ${aircraft.glide}:1 bei ${aircraft.bestSpeed} km/h · min. Sinken ≈ ${aircraft.minSink} m/s`;
   $('#modeInfo').textContent = thermalMode === 'easy' ? 'Sichtbare Bärte und Thermikradar helfen beim Zentrieren.' : 'Bärte sind unsichtbar. Suche unter Quellwolken und am sonnenwarmen Hang; Wind, Vario und Flugspur helfen beim Zentrieren.';
+  buildDials();
 }
 $('#aircraft').onchange = $('#thermalMode').onchange = configure;
 configure();
@@ -221,7 +261,9 @@ function update(dt) {
     const rollGust = .035 * Math.sin(t * 1.7 + distance * .014) + .025 * Math.sin(t * 2.9);
     targetBank = turning * (aircraft.shape === 'canopy' ? .65 : .85) + rollGust;
     bank += (targetBank - bank) * (1 - Math.exp(-dt * aircraft.roll * controlAuthority()));
-    heading = wrapAngle(heading + G * Math.tan(bank) / Math.max(aircraft.stall / 3.6, Math.abs(airVX)) * dt);
+    // World z points away from the observer. Positive heading is a left turn;
+    // positive bank lowers the pilot's right wing and turns clockwise in the map.
+    heading = wrapAngle(heading - G * Math.tan(bank) / Math.max(aircraft.stall / 3.6, Math.abs(airVX)) * dt);
   }
   if (phase === 'rollout') {
     vertical = 0; pitch *= Math.exp(-dt * 3); speed = Math.max(0, speed - dt * 6);
@@ -314,11 +356,12 @@ function update(dt) {
 function instruments() {
   $('#altitude').innerHTML = `${Math.round(Math.max(0, height - terrainAt(distance)))} <small>m</small>`;
   $('#heightBar').style.width = `${Math.min(100, height / 10)}%`;
-  $('#speed').innerHTML = `${Math.round(speed * 3.6)} <small>km/h</small>`;
+  $('#speed').textContent = `${Math.round(speed * 3.6)}`;
   $('#pitch').textContent = `Nase ${Math.round(pitch * 180 / Math.PI)}° · α ${Math.round(angleOfAttack * 180 / Math.PI)}°`;
   $('#time').textContent = formatTime(elapsed);
-  $('#vario').innerHTML = `${vertical >= 0 ? '+' : '−'}${Math.abs(vertical).toFixed(1)} <small>m/s</small>`;
-  $('#vario').style.color = vertical > 0 ? '#9b792c' : '';
+  $('#vario').textContent = `${vertical >= 0 ? '+' : '−'}${Math.abs(vertical).toFixed(1)}`;
+  $('#speedDial').setAttribute('aria-label', `Fahrtmesser: ${Math.round(speed * 3.6)} Kilometer pro Stunde`);
+  $('#varioDial').setAttribute('aria-label', `Variometer: ${vertical.toFixed(1)} Meter pro Sekunde`);
   let status = vertical > .5 ? 'Fahrt wird zu Höhe' : 'Ruhig gleiten';
   if (phase === 'winch') status = height < 10 ? 'Winde zieht an …' : 'Winde · ↓ ziehen / ↑ drücken';
   else if (phase === 'rollout') status = 'Landung · Ausrollen';
@@ -338,12 +381,12 @@ function instruments() {
   $('#thermalNote').style.opacity = mode === 'flying' && phase === 'glide' && ((thermalMode === 'easy' && Math.abs(airLift) > 1) || stalled) ? 1 : 0;
   $('#brake').setAttribute('aria-pressed', String(braking()));
   $('#brake').classList[braking() ? 'add' : 'remove']('held');
-  $('#bankReading').textContent = `${Math.round(bank * 180 / Math.PI)}° · Nase ${Math.round(pitch * 180 / Math.PI)}°`;
+  $('#bankReading').textContent = `${Math.abs(Math.round(bank * 180 / Math.PI))}° ${bank < -.02 ? 'links' : bank > .02 ? 'rechts' : 'gerade'}`;
 }
 function renderState(alpha = 1) {
-  const current = { height, distance, cameraDistance, pitch, heading, bank, crossTrack };
+  const current = { height, distance, cameraDistance, pitch, heading, bank, crossTrack, speed, vertical };
   if (!previous || alpha >= 1) return current;
-  for (const key of ['height', 'distance', 'cameraDistance', 'crossTrack']) current[key] = previous[key] + (current[key] - previous[key]) * alpha;
+  for (const key of ['height', 'distance', 'cameraDistance', 'crossTrack', 'speed', 'vertical']) current[key] = previous[key] + (current[key] - previous[key]) * alpha;
   for (const key of ['pitch', 'heading', 'bank']) current[key] = previous[key] + wrapAngle(current[key] - previous[key]) * alpha;
   return current;
 }
@@ -356,7 +399,10 @@ function view(alpha = 1) {
   const scale = worldScale(), base = mobile ? H - Math.max(110, H * .18) : H * .82;
   const h = mode === 'intro' ? 135 : state.height;
   // The aircraft keeps moving vertically, while the camera eases upward at altitude.
-  const maxRise = mobile ? Math.min(H * .57, base - (H <= 500 ? 128 : 190)) : H * .57;
+  // In portrait, keep the aircraft below the three dials and flight-data strip.
+  // The compact landscape panel sits on the right, clear of the aircraft.
+  const minPlaneY = H <= 500 ? 128 : Math.min(H * .65, 246 + (W - 56) / 3);
+  const maxRise = mobile ? Math.max(0, Math.min(H * .57, base - minPlaneY)) : H * .57;
   const rise = maxRise * (1 - Math.exp(-h / 290));
   const ground = base + h * Math.min(1.1, W / 650) - rise;
   return { scale, ground, planeY: base - rise, planeX: mode === 'intro' ? W * .66 : W * .30 + (state.distance - state.cameraDistance) * scale, state };
@@ -473,6 +519,8 @@ function draw(alpha = 1) {
   const horizonPitch = Math.asin(Math.sin(state.pitch));
   const horizonBank = state.bank + (Math.cos(state.pitch) < 0 ? Math.PI : 0);
   $('#horizonWorld').setAttribute('transform', `rotate(${-horizonBank * 180 / Math.PI}) translate(0 ${Math.max(-85, Math.min(85, horizonPitch * 65))})`);
+  $('#speedNeedle').setAttribute('transform', `rotate(${speedNeedleAngle(state.speed * 3.6)})`);
+  $('#varioNeedle').setAttribute('transform', `rotate(${varioNeedleAngle(state.vertical)})`);
   if (mode === 'flying' && phase === 'winch') {
     ctx.fillStyle = '#3b6356'; ctx.font = '11px sans-serif'; ctx.fillText('WINDENSTART', planeX - 45, planeY - 65);
   }
@@ -481,8 +529,9 @@ function draw(alpha = 1) {
 // Project a small mesh: roll, pitch and heading all change the silhouette.
 function projectAircraft(point, angle, yaw, roll) {
   const [x, y, z] = point;
-  const ry = y * Math.cos(roll) + z * Math.sin(roll);
-  const rz = -y * Math.sin(roll) + z * Math.cos(roll);
+  // Local +y is the pilot's left wing. Right bank lifts it, in every heading.
+  const ry = y * Math.cos(roll) - z * Math.sin(roll);
+  const rz = y * Math.sin(roll) + z * Math.cos(roll);
   const px = x * Math.cos(angle) - rz * Math.sin(angle);
   const pz = x * Math.sin(angle) + rz * Math.cos(angle);
   const wx = px * Math.cos(yaw) - ry * Math.sin(yaw);
@@ -490,50 +539,124 @@ function projectAircraft(point, angle, yaw, roll) {
   const perspective = 650 / (650 + depth);
   return { x: (wx - depth * .16) * perspective, y: (-pz + depth * .24) * perspective, depth };
 }
+// Dimensions are in metres. +x is forward, +y is the pilot's left, +z is up.
+// Ka 8 B: shoulder wing and conventional tail; the composite types have T-tails.
+const AIRFRAMES = {
+  classic: { nose: 2.45, tail: -4.55, width: .31, wingZ: .35, fin: 1.03, tailSpan: 1.25, tailZ: .10,
+    wing: [[0,.55,-.83],[3.1,.51,-.81],[6.8,.15,-.57],[7.4,-.12,-.48],[7.5,-.3,-.4]],
+    cockpit: [[.36,.12,.12],[.65,.30,.58],[1.2,.31,.67],[1.65,.27,.51],[2.03,.08,.12]] },
+  twin: { nose: 3.05, tail: -5.30, width: .35, wingZ: .08, fin: 1.34, tailSpan: 1.35, tailZ: 1.34,
+    wing: [[0,.56,-.94],[3.8,.33,-.80],[7.8,-.31,-.72],[8.42,-.50,-.65],[8.5,-.57,-.61]],
+    cockpit: [[.0,.13,.15],[.25,.30,.43],[.85,.32,.53],[1.5,.33,.56],[2.05,.31,.49],[2.65,.08,.12]] },
+  racer: { nose: 2.45, tail: -4.21, width: .29, wingZ: .04, fin: 1.18, tailSpan: 1.15, tailZ: 1.18,
+    wing: [[0,.42,-.84],[3.1,.23,-.69],[6.9,-.18,-.48],[7.4,-.31,-.43],[7.5,-.37,-.40]],
+    cockpit: [[.14,.10,.12],[.48,.27,.41],[1.15,.29,.47],[1.72,.24,.35],[2.05,.06,.1]] },
+  winglet: { nose: 2.55, tail: -4.17, width: .28, wingZ: .04, fin: 1.22, tailSpan: 1.15, tailZ: 1.22,
+    wing: [[0,.45,-.85],[3.25,.26,-.68],[6.9,-.15,-.46],[7.43,-.29,-.41],[7.5,-.34,-.39]],
+    cockpit: [[.16,.10,.12],[.51,.26,.40],[1.2,.28,.45],[1.8,.23,.33],[2.15,.06,.1]] }
+};
 function aircraftMesh() {
-  const span = aircraft.span * 5.5, classic = aircraft.shape === 'classic';
+  const faces = [];
+  const face = (part, color, points) => faces.push({ part, color, points });
+  const toPixels = () => faces.map(f => ({ ...f, points: f.points.map(p => p.map(v => v * 15)) }));
   if (aircraft.shape === 'canopy') {
-    const faces = [];
-    for (let i = 0; i < 10; i++) {
-      const a = -Math.PI / 2 + i * Math.PI / 10, b = a + Math.PI / 10;
-      const rim = (v, x) => [x, Math.sin(v) * span, 30 + Math.cos(v) * 27];
-      faces.push({ points: [rim(a, 16), rim(b, 16), rim(b, -12), rim(a, -12)], color: i % 3 === 0 ? '#fff1cf' : aircraft.color });
+    const rim = (v, row, underside = false) => {
+      const z = 1.6 + Math.cos(v) * 1.65;
+      const chord = 1.05 * (.55 + .45 * Math.cos(v));
+      return [row * chord, Math.sin(v) * aircraft.span / 2, z + (row === 0 ? .16 : 0) - (underside ? .10 : 0)];
+    };
+    for (let i = 0; i < 20; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 20, b = a + Math.PI / 20;
+      const color = i < 3 || i >= 17 ? '#285c73' : i % 5 === 0 ? '#f6eed5' : aircraft.color;
+      for (const [front,back] of [[1,0],[0,-1]]) face('canopy',color,[rim(a,front),rim(b,front),rim(b,back),rim(a,back)]);
+      face('canopy-bottom','#ead1a0',[rim(a,1,true),rim(a,-1,true),rim(b,-1,true),rim(b,1,true)]);
+      face('cell-openings','#456273',[rim(a,1),rim(a,1,true),rim(b,1,true),rim(b,1)]);
     }
-    faces.push({ points: [[4,-4,-12],[4,4,-12],[-12,5,-23],[-12,-5,-23]], color: '#344e5b' });
-    return faces;
+    face('harness','#293e4c',[[.1,-.17,-1.1],[.1,.17,-1.1],[-.52,.23,-1.87],[-.52,-.23,-1.87]]);
+    face('pilot-legs','#3d5360',[[.03,-.12,-1.65],[.03,.12,-1.65],[.62,.12,-1.75],[.62,-.12,-1.75]]);
+    return toPixels();
   }
-  const length = aircraft.shape === 'twin' ? 1.15 : classic ? .92 : 1;
-  const faces = [
-    { points: [[-65,0,0],[-58,0,24],[-49,0,24],[-43,0,0]], color: aircraft.color },
-    { points: [[-51,-23,3],[-58,-23,3],[-58,23,3],[-51,23,3],[-44,0,3]], color: '#e9e6d5' },
-    { points: [[9,-3,4],[-3,-span,4],[-14,-span,4],[-11,0,4],[-14,span,4],[-3,span,4],[9,3,4]], color: classic ? '#f3dfaf' : '#fffdf2' },
-    { points: [[60,0,1],[26,-5,7],[-5,-5,6],[-63,0,1],[-5,5,-5],[26,5,-4]], color: '#fffdf2' },
-    { points: [[26,-4,7],[17,-4,16],[2,-4,15],[-3,-4,7],[-3,4,7],[17,4,16],[26,4,7]], color: '#88adb5' },
-    { points: [[-7,-span,4],[-14,-span,4],[-12,-span*.7,4],[-5,-span*.7,4]], color: aircraft.color },
-    { points: [[-7,span,4],[-14,span,4],[-12,span*.7,4],[-5,span*.7,4]], color: aircraft.color }
+  const g = AIRFRAMES[aircraft.shape], classic = aircraft.shape === 'classic';
+  const white = classic ? '#f5edda' : '#fafaf4';
+  const planformArea = g.wing.slice(1).reduce((sum, p, i) => sum + (p[0] - g.wing[i][0]) * (p[1] - p[2] + g.wing[i][1] - g.wing[i][2]), 0);
+  const wingStations = g.wing.map(([y,le,te]) => {
+    const quarter = le * .75 + te * .25, chord = (le - te) * aircraft.area / planformArea;
+    return [y,quarter + chord * .25,quarter - chord * .75];
+  });
+  const stations = [
+    [g.nose,0,0,-.02],[g.nose-.18,.12,.13,-.01],[g.nose-.65,g.width*.85,.26,0],
+    [.8,g.width,.29,0],[0,g.width*.84,.26,0],[-1.1,.16,.17,.01],
+    [g.tail+.9,.065,.085,.03],[g.tail,.035,.05,.04]
   ];
-  if (aircraft.shape === 'winglet') for (const side of [-1,1]) faces.push({ points: [[-3,side*span,4],[-8,side*(span+3),19],[-14,side*span,4]], color: aircraft.color });
-  if (braking()) for (const side of [-1,1]) faces.push({ points: [[-5,side*span*.2,4],[-5,side*span*.55,4],[-5,side*span*.55,12],[-5,side*span*.2,12]], color: '#b45340' });
-  for (const face of faces) face.points = face.points.map(([x,y,z]) => [x*length,y,z]);
-  return faces;
+  const ring = (station, i) => {
+    const [x,w,h,z] = station, angle = i * Math.PI / 4;
+    return [x,Math.cos(angle)*w,z+Math.sin(angle)*h];
+  };
+  for (let j=0;j<stations.length-1;j++) for (let i=0;i<8;i++) {
+    const paint = classic && j < 2 ? aircraft.color : i < 4 ? white : '#d4dcd7';
+    face('fuselage',paint,[ring(stations[j],i),ring(stations[j],i+1),ring(stations[j+1],i+1),ring(stations[j+1],i)]);
+  }
+  // Actual planform, wing mounting height and modest dihedral distinguish the types.
+  for (const side of [-1,1]) for (let i=0;i<wingStations.length-1;i++) {
+    const [y1,le1,te1]=wingStations[i], [y2,le2,te2]=wingStations[i+1];
+    const z1=g.wingZ+y1*.025, z2=g.wingZ+y2*.025;
+    const top=[[le1,side*y1,z1],[le2,side*y2,z2],[te2,side*y2,z2],[te1,side*y1,z1]];
+    face('wing',i===g.wing.length-2 ? aircraft.color : white,top);
+    face('wing-bottom','#ced8d3',top.map(([x,y,z])=>[x,y,z-.06]).reverse());
+    face('leading-edge','#e1e6de',[[le1,side*y1,z1],[le2,side*y2,z2],[le2,side*y2,z2-.06],[le1,side*y1,z1-.06]]);
+    if (classic && i<3) for(let rib=y1+.4;rib<y2;rib+=.5) {
+      const f=(rib-y1)/(y2-y1),le=le1+(le2-le1)*f,te=te1+(te2-te1)*f,z=g.wingZ+rib*.025+.008;
+      face('fabric-rib','#dfd5bd',[[le,side*rib,z],[te,side*rib,z],[te,side*(rib+.012),z],[le,side*(rib+.012),z]]);
+    }
+  }
+  const finX=g.tail+.12;
+  const fin = classic ? [[g.tail+.95,0,.05],[g.tail+.71,0,.72],[g.tail+.37,0,1.03],[finX,0,1.0],[g.tail,0,.70],[g.tail,0,.06]] :
+    [[g.tail+.97,0,.04],[g.tail+.64,0,g.fin-.06],[finX,0,g.fin],[g.tail,0,g.fin-.08],[g.tail,0,.03]];
+  face('fin',aircraft.color,fin);
+  for (const side of [-1,1]) face('tailplane',white,[[g.tail+.74,0,g.tailZ],[g.tail+.54,side*g.tailSpan*.75,g.tailZ],[g.tail+.35,side*g.tailSpan,g.tailZ],[g.tail+.07,side*g.tailSpan,g.tailZ],[g.tail+.02,0,g.tailZ]]);
+  if (aircraft.shape === 'winglet') for (const side of [-1,1]) face('winglet',white,[[-.29,side*7.43,g.wingZ+.19],[-.41,side*7.60,.70],[-.62,side*7.60,.67],[-.39,side*7.50,g.wingZ+.19]]);
+  // Rounded canopy; ASK 21 has two seats under two separately framed hoods.
+  const glassRing = (station, i) => {
+    const [x,w,h] = station,a=i*Math.PI/6;
+    return [x,Math.cos(a)*w,.18+Math.sin(a)*h];
+  };
+  for (let j=0;j<g.cockpit.length-1;j++) for(let i=0;i<6;i++) {
+    face('cockpit',i<3 ? '#789da9' : '#a6c2c6',[glassRing(g.cockpit[j],i),glassRing(g.cockpit[j+1],i),glassRing(g.cockpit[j+1],i+1),glassRing(g.cockpit[j],i+1)]);
+  }
+  for (const index of classic ? [0,4] : aircraft.shape==='twin' ? [0,3,5] : [0,4]) {
+    const station=g.cockpit[index];
+    for (let i=0;i<6;i++) {
+      const a=glassRing(station,i),b=glassRing(station,i+1);
+      face('canopy-frame',white,[a,b,[b[0]+.035,b[1],b[2]+.008],[a[0]+.035,a[1],a[2]+.008]]);
+    }
+  }
+  // A small main wheel below the fuselage, and red spoiler plates when deployed.
+  for (const side of [-1,1]) {
+    const points=[];
+    for(let i=0;i<12;i++){const a=i*Math.PI/6;points.push([-.15+Math.cos(a)*.18,side*.06,-.27+Math.sin(a)*.18]);}
+    face('wheel','#303c3e',points);
+    if (braking()) face('airbrake','#a94e3c',[[-.15,side*1.5,g.wingZ+.05],[-.15,side*3.2,g.wingZ+.1],[-.15,side*3.2,g.wingZ+.42],[-.15,side*1.5,g.wingZ+.37]]);
+  }
+  return toPixels();
 }
 function plane(x, y, angle, s, yaw = 0, roll = 0) {
   ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
   const mesh = aircraftMesh().map(face => ({ ...face, points: face.points.map(p => projectAircraft(p,angle,yaw,roll)) }));
   mesh.sort((a,b) => b.points.reduce((n,p)=>n+p.depth,0)/b.points.length - a.points.reduce((n,p)=>n+p.depth,0)/a.points.length);
   for (const face of mesh) {
-    ctx.fillStyle=face.color; ctx.strokeStyle='#50746e'; ctx.lineWidth=.7;
+    ctx.fillStyle=face.color; ctx.strokeStyle='#647e77'; ctx.lineWidth=.55;
     ctx.beginPath(); face.points.forEach((p,i)=>i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
-    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.closePath(); ctx.fill();
+    if (!['fuselage','cockpit','canopy-bottom','wheel'].includes(face.part)) ctx.stroke();
   }
   if (aircraft.shape === 'canopy') {
     ctx.strokeStyle='#4a666b88'; ctx.lineWidth=.7;
-    for (const side of [-1,1]) for (const span of [.35,.75]) {
-      const a=projectAircraft([0,side*aircraft.span*5.5*span,44],angle,yaw,roll);
-      const b=projectAircraft([0,0,-12],angle,yaw,roll);
+    for (const side of [-1,1]) for (const span of [.3,.6,.9]) {
+      const a=projectAircraft([0,side*aircraft.span/2*span*15,(1.6+Math.sqrt(1-span*span)*1.65)*15],angle,yaw,roll);
+      const b=projectAircraft([1,side*2,-17],angle,yaw,roll);
       ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
     }
-    const pilot=projectAircraft([1,0,-9],angle,yaw,roll);
+    const pilot=projectAircraft([2,0,-12],angle,yaw,roll);
     ctx.fillStyle='#34545d';ctx.beginPath();ctx.arc(pilot.x,pilot.y,4,0,Math.PI*2);ctx.fill();
   }
   ctx.restore();
@@ -541,15 +664,15 @@ function plane(x, y, angle, s, yaw = 0, roll = 0) {
 function drawRadar() {
   const mobile = touchLayout();
   const compact = mobile && H <= 500;
-  const size = compact ? 82 : mobile ? 108 : 160;
+  const size = compact ? 64 : mobile ? 108 : 160;
   const x = mobile ? W - size - radarRight : 35;
-  const y = mobile ? Math.max(compact ? 132 : 200, H - size - radarBottom) : H - size - 75;
+  const y = compact ? H - size - 78 : mobile ? Math.max(320, H - size - radarBottom) : H - size - 75;
   const cx = x + size / 2, cy = y + size / 2, zoom = size / 650;
   ctx.save(); ctx.fillStyle = '#fffdf0f2'; ctx.fillRect(x, y, size, size);
   ctx.beginPath(); ctx.rect(x, y, size, size); ctx.clip();
   for (const core of thermalMode === 'easy' ? thermals.values() : []) {
     const life = thermalLife(core); if (life <= 0) continue; ctx.globalAlpha = life;
-    const px = cx + (core.x - distance) * zoom, py = cy + (core.z - crossTrack) * zoom;
+    const px = cx + (core.x - distance) * zoom, py = cy - (core.z - crossTrack) * zoom;
     for (const [radius, color] of [[core.radius, '#e7be4920'], [100, '#d9ae3c45'], [35, '#bb8e3280']]) {
       ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px, py, radius * zoom, 0, Math.PI * 2); ctx.fill();
     }
@@ -557,20 +680,20 @@ function drawRadar() {
   }
   ctx.globalAlpha = 1;
   ctx.strokeStyle = '#527e6c80'; ctx.setLineDash([3, 4]); ctx.beginPath();
-  ctx.moveTo(x, cy - crossTrack * zoom); ctx.lineTo(x + size, cy - crossTrack * zoom); ctx.stroke(); ctx.setLineDash([]);
+  ctx.moveTo(x, cy + crossTrack * zoom); ctx.lineTo(x + size, cy + crossTrack * zoom); ctx.stroke(); ctx.setLineDash([]);
   ctx.strokeStyle = '#315f4d99'; ctx.beginPath();
   for (let i = 0; i < trail.length; i++) {
-    const px = cx + (trail[i].x - distance) * zoom, py = cy + (trail[i].z - crossTrack) * zoom;
+    const px = cx + (trail[i].x - distance) * zoom, py = cy - (trail[i].z - crossTrack) * zoom;
     if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   }
   ctx.stroke();
   ctx.strokeStyle = '#4c7088'; ctx.beginPath(); ctx.moveTo(x + 12, y + 12);
-  ctx.lineTo(x + 12 + localWind.x * 4, y + 12 + localWind.z * 4); ctx.stroke();
-  ctx.translate(cx, cy); ctx.rotate(heading); ctx.fillStyle = '#234e46';
+  ctx.lineTo(x + 12 + localWind.x * 4, y + 12 - localWind.z * 4); ctx.stroke();
+  ctx.translate(cx, cy); ctx.rotate(-heading); ctx.fillStyle = '#234e46';
   ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-5, -5); ctx.lineTo(-2, 0); ctx.lineTo(-5, 5); ctx.closePath(); ctx.fill();
   ctx.restore(); ctx.fillStyle = '#385d4e'; ctx.font = mobile ? '8px sans-serif' : '9px sans-serif';
   ctx.fillText(thermalMode === 'advanced' ? 'FLUGSPUR · WIND' : `${compact ? 'LUFT' : 'THERMIKRADAR'} · ${airLift.toFixed(1)} m/s`, x, y - 9);
-  ctx.fillText(compact ? '← / → wenden' : mobile ? '← / → gegensteuern' : '← / → wenden · Wind beachten', x, y + size + 15);
+  ctx.fillText(compact ? '← / → Pilotensicht' : mobile ? '← / → Pilotensicht' : '← / → Pilotensicht · Wind beachten', x, y + size + (compact ? 11 : 15));
 }
 function frame(now) {
   const dt = Math.min((now - last) / 1000 || 0, .1); last = now;
