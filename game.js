@@ -13,6 +13,20 @@ const AIRCRAFT = {
   paraglider: { name: 'Gleitschirm', span: 10, area: 26, mass: 110, stall: 22, bestSpeed: 37, glide: 9, minSink: 1.1, maxSpeed: 55, roll: 1.5, elevator: .18, brake: .22, color: '#e38a43', shape: 'canopy', description: 'Langsam und weich · Pendelbewegung, enge Kreise, windempfindlich' }
 };
 let aircraft = AIRCRAFT.ask21, thermalMode = 'easy', overspeed = false;
+let speedHoldEnabled = false;
+const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+function maximumBank() { return (aircraft.shape === 'canopy' ? 55 : 65) * Math.PI / 180; }
+function turnFactor(angle = bank) { return 1 / Math.sqrt(Math.max(.25, Math.cos(angle))); }
+function stallSpeed(angle = bank) { return aircraft.stall * turnFactor(angle); }
+function targetSpeed(angle = bank) { return Math.min(aircraft.maxSpeed * .9, aircraft.bestSpeed * turnFactor(angle)); }
+function speedAssistActive() { return speedHoldEnabled && mode === 'flying' && phase === 'glide'; }
+function toggleSpeedAssist() {
+  if (mode !== 'flying' || paused || phase === 'rollout') return;
+  speedHoldEnabled = !speedHoldEnabled;
+  $('#speedAssist').checked = speedHoldEnabled;
+  canvas.focus?.({ preventScroll: true });
+  instruments();
+}
 function gaugeSettings() {
   const maximum = aircraft.shape === 'canopy' ? 80 : aircraft.maxSpeed <= 220 ? 220 : 300;
   return { maximum, major: maximum === 80 ? 10 : maximum === 220 ? 20 : 50, minor: maximum === 80 ? 2 : 10 };
@@ -41,12 +55,16 @@ function buildDials() {
     marks += gaugeTick(speedNeedleAngle(n), major, major ? n : undefined);
   }
   const a = gaugePoint(speedNeedleAngle(aircraft.maxSpeed), 44), b = gaugePoint(speedNeedleAngle(aircraft.maxSpeed), 55);
-  $('#speedScale').innerHTML = marks + `<path d="M${a} L${b}" stroke="#ed6d58" stroke-width="2"/>`;
+  marks += `<path d="M${a} L${b}" stroke="#ed6d58" stroke-width="2"/>`;
+  // Distinct, labelled fixed references; the two outer bugs move with turn load.
+  marks += `<g data-speed="${aircraft.stall}" transform="rotate(${speedNeedleAngle(aircraft.stall)})"><title>Abrissfahrt im Geradeausflug: ${aircraft.stall} km/h</title><path d="M-3-51L0-45 3-51Z" fill="#ff7864"/><text x="0" y="-36" text-anchor="middle" fill="#ff9989" font-size="5">VS</text></g>`;
+  marks += `<g data-speed="${aircraft.bestSpeed}" transform="rotate(${speedNeedleAngle(aircraft.bestSpeed)})"><title>Bestes Gleiten: ${aircraft.bestSpeed} km/h</title><path d="M0-46L-3-50 0-54 3-50Z" fill="#62d5ed"/><text x="0" y="-36" text-anchor="middle" fill="#86e5f6" font-size="5">VG</text></g>`;
+  $('#speedScale').innerHTML = marks;
   marks = '';
   for (let n = -25; n <= 25; n++) marks += gaugeTick(varioNeedleAngle(n / 5), n % 5 === 0, n % 5 === 0 ? Math.abs(n / 5) : undefined);
   $('#varioScale').innerHTML = marks;
   marks = '';
-  for (const angle of [-60,-45,-30,-20,-10,0,10,20,30,45,60]) {
+  for (const angle of [-65,-60,-45,-30,-20,-10,0,10,20,30,45,60,65]) {
     const a = gaugePoint(angle, 49), b = gaugePoint(angle, Math.abs(angle) % 30 === 0 ? 56 : 53);
     marks += `<path d="M${a} L${b}" stroke="#f5f0d8" stroke-width="1.2"/>`;
   }
@@ -56,6 +74,18 @@ function aeroProfile() {
   const liftFactor = .02 * (aircraft.area / aircraft.mass) / (17.95 / 600);
   const optimalCL = G / (liftFactor * (aircraft.bestSpeed / 3.6) ** 2);
   return { liftFactor, cd0: optimalCL / (2 * aircraft.glide), induced: 1 / (2 * aircraft.glide * optimalCL) };
+}
+function speedAssistRate(flightAngle, aero) {
+  // Elevator-only speed control: trade height for airspeed, without adding energy.
+  const v = Math.max(1, speed), cosBank = Math.max(.25, Math.cos(bank));
+  const levelCL = G * Math.cos(flightAngle) / (aero.liftFactor * v * v * cosBank);
+  const drag = aero.liftFactor * v * v * (aero.cd0 + aero.induced * levelCL ** 2 + .025 * Math.sin(bank) ** 2);
+  const desiredPath = Math.asin(clamp(((v - targetSpeed() / 3.6) * .45 - drag) / G, -.5, .4));
+  const pathRate = wrapAngle(desiredPath - flightAngle) * 2.5;
+  const requiredCL = (G * Math.cos(flightAngle) + v * pathRate) / (aero.liftFactor * v * v * cosBank);
+  let alpha = clamp((requiredCL - .38) / 4.7, -.16, .25);
+  if (stalled || v * 3.6 < stallSpeed() * 1.08) alpha = -.05;
+  return clamp(wrapAngle(flightAngle + alpha - pitch) * 5 - pitchRate * .6, -1.4, 1.4) * clamp(controlAuthority(), .7, 1);
 }
 function controlAuthority(v = speed) {
   return Math.min(1.8, Math.max(0, (v / (aircraft.bestSpeed / 3.6)) ** 2));
@@ -102,6 +132,7 @@ if (typeof visualViewport !== 'undefined') visualViewport.addEventListener('resi
 resize();
 function start() {
   configure();
+  speedHoldEnabled = !!$('#speedAssist').checked;
   mode = 'flying'; paused = false; phase = 'winch'; phaseTime = 0;
   elapsed = 0; height = 0; distance = 0; speed = 0; pitch = 0; vertical = 0;
   airLift = 0; stalled = false; airVX = 0; airVY = 0;
@@ -131,6 +162,7 @@ function togglePause() {
   instruments();
 }
 $('#pause').onclick = togglePause;
+$('#autopilot').onclick = toggleSpeedAssist;
 function release() {
   if (mode === 'flying' && !paused && phase === 'winch' && height > 12) {
     phase = 'glide';
@@ -139,10 +171,11 @@ function release() {
 addEventListener('keydown', e => {
   if (['SELECT', 'INPUT', 'TEXTAREA'].includes(e.target?.tagName) || (e.target?.tagName === 'BUTTON' && ['Space', 'Enter'].includes(e.code))) return;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
-  if (e.repeat && ['KeyP', 'Escape', 'KeyR'].includes(e.code)) return;
+  if (e.repeat && ['KeyP', 'Escape', 'KeyR', 'KeyF'].includes(e.code)) return;
   keys.add(e.code);
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   if (e.code === 'KeyR') release();
+  if (e.code === 'KeyF') toggleSpeedAssist();
 });
 addEventListener('keyup', e => keys.delete(e.code));
 function suspend() {
@@ -256,10 +289,19 @@ function update(dt) {
   const elevator = Number(pull) - Number(push);
   const turning = Number(keys.has('ArrowRight') || keys.has('KeyD')) - Number(keys.has('ArrowLeft') || keys.has('KeyA'));
   const weather = airAt(distance, height);
+  if (phase === 'glide' && (elevator || braking())) {
+    speedHoldEnabled = false;
+  }
   if (phase === 'glide') {
     // Only held input commands a turn. No latched bank, circling mode or route autopilot.
     const rollGust = .035 * Math.sin(t * 1.7 + distance * .014) + .025 * Math.sin(t * 2.9);
-    targetBank = turning * (aircraft.shape === 'canopy' ? .65 : .85) + rollGust;
+    let bankLimit = maximumBank();
+    if (speedAssistActive()) {
+      // Gain the necessary speed before steepening, rather than forcing a stall.
+      const available = stalled ? 0 : Math.acos(Math.min(1, (aircraft.stall * 1.22 / Math.max(1, speed * 3.6)) ** 2));
+      bankLimit = Math.min(bankLimit, available);
+    }
+    targetBank = clamp(turning * maximumBank() + rollGust, -bankLimit, bankLimit);
     bank += (targetBank - bank) * (1 - Math.exp(-dt * aircraft.roll * controlAuthority()));
     // World z points away from the observer. Positive heading is a left turn;
     // positive bank lowers the pilot's right wing and turns clockwise in the map.
@@ -290,15 +332,17 @@ function update(dt) {
     else if (towing) {
       const launchTrim = Math.min(.72, flightAngle + (height < 2 ? .10 : .08));
       commandedRate = wrapAngle(launchTrim - pitch) * 2.5;
+    } else if (speedAssistActive()) {
+      commandedRate = speedAssistRate(flightAngle, aero);
     } else {
       const trim = (G * Math.cos(flightAngle) / Math.max(2, aero.liftFactor * speed * speed * Math.cos(bank)) - .38) / 4.7;
-      commandedRate = wrapAngle(flightAngle + Math.max(-.08, Math.min(.18, trim)) - pitch) * .8;
+      commandedRate = wrapAngle(flightAngle + clamp(trim, -.08, .26) - pitch) * .8;
     }
     commandedRate += .025 * Math.sin(t * 2.1 + distance * .013) + weather.ridge * .008;
     pitchRate += (commandedRate - pitchRate) * (1 - Math.exp(-dt * 4));
     angleOfAttack = wrapAngle(pitch - flightAngle);
-    if (!stalled && (speed < aircraft.stall / 3.6 || Math.abs(angleOfAttack) > .32)) stalled = true;
-    else if (stalled && speed > aircraft.stall / 3.6 * 1.12 && Math.abs(angleOfAttack) < .18) stalled = false;
+    if (!stalled && (speed < stallSpeed() / 3.6 || Math.abs(angleOfAttack) > .32)) stalled = true;
+    else if (stalled && speed > stallSpeed() / 3.6 * 1.12 && Math.abs(angleOfAttack) < .18) stalled = false;
     stallBlend += (Number(stalled) - stallBlend) * (1 - Math.exp(-dt * 5));
     pitchRate += wrapAngle(flightAngle - pitch) * stallBlend * dt * 2.5;
     pitch = wrapAngle(pitch + pitchRate * dt);
@@ -360,7 +404,13 @@ function instruments() {
   $('#pitch').textContent = `Nase ${Math.round(pitch * 180 / Math.PI)}° · α ${Math.round(angleOfAttack * 180 / Math.PI)}°`;
   $('#time').textContent = formatTime(elapsed);
   $('#vario').textContent = `${vertical >= 0 ? '+' : '−'}${Math.abs(vertical).toFixed(1)}`;
-  $('#speedDial').setAttribute('aria-label', `Fahrtmesser: ${Math.round(speed * 3.6)} Kilometer pro Stunde`);
+  $('#speedDial').setAttribute('aria-label', `Fahrt ${Math.round(speed * 3.6)}, Abriss ${Math.round(stallSpeed())}, Sollfahrt ${Math.round(targetSpeed())} Kilometer pro Stunde`);
+  $('#stallGuide').textContent = `▲ Abriss ${Math.round(stallSpeed())}`;
+  $('#targetGuide').textContent = `◆ Soll ${Math.round(targetSpeed())} km/h`;
+  if (mode !== 'intro') $('#speedAssist').checked = speedHoldEnabled;
+  $('#autopilot').setAttribute('aria-pressed', String(speedHoldEnabled));
+  $('#autopilot').disabled = mode !== 'flying' || paused || phase === 'rollout';
+  $('#autopilot').textContent = speedHoldEnabled ? 'Fahrt-Auto: Ein' : 'Fahrt-Auto · F';
   $('#varioDial').setAttribute('aria-label', `Variometer: ${vertical.toFixed(1)} Meter pro Sekunde`);
   let status = vertical > .5 ? 'Fahrt wird zu Höhe' : 'Ruhig gleiten';
   if (phase === 'winch') status = height < 10 ? 'Winde zieht an …' : 'Winde · ↓ ziehen / ↑ drücken';
@@ -368,6 +418,8 @@ function instruments() {
   else if (stalled) status = 'Strömungsabriss! Nase runter ↑';
   else if (overspeed) status = 'Zu schnell! Vorsichtig abbremsen';
   else if (braking()) status = 'Luftbremse ausgefahren';
+  else if (speedAssistActive()) status = `Fahrt-Auto · ${Math.round(targetSpeed())} km/h halten · Kurven selbst steuern`;
+  else if (speed * 3.6 < stallSpeed() * 1.15) status = 'Wenig Fahrtreserve · drücken oder Kurve öffnen';
   else if (thermalMode === 'easy' && airLift < -1) status = 'Abwind · Fahrt halten';
   else if (thermalMode === 'easy' && airLift > 1) status = 'Aufwind · manuell zentrieren';
   else if (height < 70) status = onRunway(distance) ? 'Landebahn unter dir' : 'Flugplatz suchen';
@@ -401,7 +453,7 @@ function view(alpha = 1) {
   // The aircraft keeps moving vertically, while the camera eases upward at altitude.
   // In portrait, keep the aircraft below the three dials and flight-data strip.
   // The compact landscape panel sits on the right, clear of the aircraft.
-  const minPlaneY = H <= 500 ? 128 : Math.min(H * .65, 246 + (W - 56) / 3);
+  const minPlaneY = H <= 500 ? 128 : Math.min(H * .68, 266 + (W - 56) / 3);
   const maxRise = mobile ? Math.max(0, Math.min(H * .57, base - minPlaneY)) : H * .57;
   const rise = maxRise * (1 - Math.exp(-h / 290));
   const ground = base + h * Math.min(1.1, W / 650) - rise;
@@ -521,6 +573,8 @@ function draw(alpha = 1) {
   $('#horizonWorld').setAttribute('transform', `rotate(${-horizonBank * 180 / Math.PI}) translate(0 ${Math.max(-85, Math.min(85, horizonPitch * 65))})`);
   $('#speedNeedle').setAttribute('transform', `rotate(${speedNeedleAngle(state.speed * 3.6)})`);
   $('#varioNeedle').setAttribute('transform', `rotate(${varioNeedleAngle(state.vertical)})`);
+  $('#turnStallMarker').setAttribute('transform', `rotate(${speedNeedleAngle(stallSpeed(state.bank))})`);
+  $('#targetMarker').setAttribute('transform', `rotate(${speedNeedleAngle(targetSpeed(state.bank))})`);
   if (mode === 'flying' && phase === 'winch') {
     ctx.fillStyle = '#3b6356'; ctx.font = '11px sans-serif'; ctx.fillText('WINDENSTART', planeX - 45, planeY - 65);
   }
@@ -665,7 +719,7 @@ function drawRadar() {
   const mobile = touchLayout();
   const compact = mobile && H <= 500;
   const size = compact ? 64 : mobile ? 108 : 160;
-  const x = mobile ? W - size - radarRight : 35;
+  const x = compact ? W - 276 - radarRight - size - 12 : mobile ? W - size - radarRight : 35;
   const y = compact ? H - size - 78 : mobile ? Math.max(320, H - size - radarBottom) : H - size - 75;
   const cx = x + size / 2, cy = y + size / 2, zoom = size / 650;
   ctx.save(); ctx.fillStyle = '#fffdf0f2'; ctx.fillRect(x, y, size, size);

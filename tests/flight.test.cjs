@@ -274,3 +274,78 @@ test('airframes preserve original span-length ratios, wing heights and tail type
     keys.add('Space');assert.ok(aircraftMesh().some(f=>f.part==='airbrake'));
   }
 `));
+
+test('every dial marks stall and best-glide speeds with a safe turn-dependent separation', () => game()(`
+  for (const [id,p] of Object.entries(AIRCRAFT)) {
+    $('#aircraft').value=id;start();
+    assert.ok($('#speedScale').innerHTML.includes('data-speed="'+p.stall+'"'));
+    assert.ok($('#speedScale').innerHTML.includes('data-speed="'+p.bestSpeed+'"'));
+    assert.ok($('#speedScale').innerHTML.includes('Bestes Gleiten'));
+    assert.equal(targetSpeed(0),p.bestSpeed);
+    for(const angle of [0,maximumBank()]) assert.ok(targetSpeed(angle)>=stallSpeed(angle)*1.35,id+' margin');
+    phase='glide';bank=maximumBank();draw();instruments();
+    assert.equal($('#turnStallMarker').attrs.transform,'rotate('+speedNeedleAngle(stallSpeed())+')');
+    assert.equal($('#targetMarker').attrs.transform,'rotate('+speedNeedleAngle(targetSpeed())+')');
+    assert.ok($('#targetGuide').textContent.includes(String(Math.round(targetSpeed()))));
+  }
+`));
+
+for (const id of ['ka8','ask21','ls4','ls8','paraglider']) {
+  test(id+' speed assist settles on the target without stalls or added energy, straight and in steep circles', () => {
+    for(const turn of [false,true]) game()(`
+      $('#aircraft').value='${id}';airAt=()=>({x:0,z:0,up:0,ridge:0});
+      const p=AIRCRAFT['${id}'];setup(p.bestSpeed/3.6*.9,1500,0);toggleSpeedAssist();
+      const initialEnergy=G*height+speed*speed/2;
+      ${turn ? "keys.add('ArrowRight');" : ''}
+      let maxError=0,sumError=0,samples=0,maxAngle=0,headingTravel=0;
+      for(let i=0;i<60*120;i++) {
+        const oldHeading=heading;update(STEP);headingTravel+=Math.abs(wrapAngle(heading-oldHeading));
+        assert.equal(mode,'flying');assert.ok(!stalled,'safe entry and sustained flight');
+        assert.ok(speedHoldEnabled);
+        if(i>30*120) {
+          const error=Math.abs(speed*3.6-targetSpeed());maxError=Math.max(maxError,error);sumError+=error;samples++;
+          maxAngle=Math.max(maxAngle,Math.abs(bank));
+          assert.ok(speed*3.6>stallSpeed()*1.15,'usable stall reserve');
+        }
+      }
+      assert.ok(maxError<( ${turn} ? p.bestSpeed*.09 : 1),'maximum tracking error '+maxError);
+      assert.ok(sumError/samples<( ${turn} ? p.bestSpeed*.04 : .2),'mean tracking error');
+      assert.ok(G*height+speed*speed/2<initialEnergy-10,'no motor or injected airspeed');
+      if(${turn}) { assert.ok(maxAngle>maximumBank()-.03);assert.ok(headingTravel>Math.PI*2,'tight full circles'); }
+      else { assert.ok(maxAngle<.08,'only gust roll without turn input');assert.ok(Math.abs(heading)<.3,'no circle autopilot'); }
+    `);
+  });
+}
+
+test('speed assist can be armed for launch, toggled by F and touch, paused and overridden manually', () => game()(`
+  $('#speedAssist').checked=true;instruments();assert.ok($('#speedAssist').checked,'intro choice survives HUD refresh');
+  start();assert.ok(speedHoldEnabled&&!speedAssistActive());
+  advance(16);const momentum=JSON.stringify([airVX,airVY,pitch,height]);release();assert.ok(speedAssistActive());
+  assert.equal(JSON.stringify([airVX,airVY,pitch,height]),momentum);
+  const event=code=>({code,preventDefault(){},repeat:false});
+  dispatch('keydown',event('KeyF'));assert.ok(!speedHoldEnabled);
+  dispatch('keydown',{...event('KeyF'),repeat:true});assert.ok(!speedHoldEnabled);
+  $('#autopilot').onclick();assert.ok(speedHoldEnabled);
+  togglePause();const state=JSON.stringify([speed,pitch,height,t]);advance(2);
+  assert.equal(JSON.stringify([speed,pitch,height,t]),state);assert.ok(speedHoldEnabled);
+  togglePause();keys.add('ArrowDown');update(STEP);assert.ok(!speedHoldEnabled);
+  keys.clear();toggleSpeedAssist();keys.add('Space');update(STEP);assert.ok(!speedHoldEnabled&&braking());
+  keys.clear();toggleSpeedAssist();const e={pointerId:50,preventDefault(){}};
+  $('#right').onpointerdown(e);update(STEP);assert.ok(!speedHoldEnabled);
+  $('#right').onpointerup(e);instruments();assert.equal($('#autopilot').attrs['aria-pressed'],'false');
+`));
+
+test('speed assist handles winch-release attitude, wind and gusts without repeated stalls for all aircraft', () => {
+  for(const id of ['ka8','ask21','ls4','ls8','paraglider']) game()(`
+    $('#aircraft').value='${id}';$('#speedAssist').checked=true;start();advance(16);release();
+    // Keep the actual launch momentum and attitude, with height for a long weather test.
+    height=600;keys.add('ArrowRight');
+    for(let i=0;i<50*120;i++) {
+      update(STEP);assert.equal(mode,'flying','${id}');assert.ok(!stalled,'${id} safe release and circling');
+      if(i>30*120) {
+        assert.ok(speed*3.6>stallSpeed()*1.15,'${id} reserve in gusts');
+        assert.ok(Math.abs(speed*3.6-targetSpeed())<targetSpeed()*.12,'${id} speed tracking in moving air');
+      }
+    }
+  `);
+});
