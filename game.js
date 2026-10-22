@@ -18,6 +18,7 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 function maximumBank() { return (aircraft.shape === 'canopy' ? 55 : 65) * Math.PI / 180; }
 function turnFactor(angle = bank) { return 1 / Math.sqrt(Math.max(.25, Math.cos(angle))); }
 function stallSpeed(angle = bank) { return aircraft.stall * turnFactor(angle); }
+function warningSpeed(angle = bank) { return stallSpeed(angle) * 1.22; }
 function targetSpeed(angle = bank) { return Math.min(aircraft.maxSpeed * .9, aircraft.bestSpeed * turnFactor(angle)); }
 function speedAssistActive() { return speedHoldEnabled && mode === 'flying' && phase === 'glide'; }
 function toggleSpeedAssist() {
@@ -107,7 +108,7 @@ let radarRight = 24, radarBottom = 134;
 let W, H, mode = 'intro', paused = false, last = 0, t = 0;
 let elapsed = 0, height = 0, distance = 0, speed = 0, pitch = 0, vertical = 0;
 let airVX = 0, airVY = 0, cameraDistance = 0, cameraSpeed = 0;
-let angleOfAttack = 0, pitchRate = 0, stallBlend = 0;
+let angleOfAttack = 0, pitchRate = 0, stallBlend = 0, stallExposure = 0, stallWarning = false;
 let localWind = { x: 0, z: 0, up: 0 }, windReady = false;
 const thermals = new Map(), trail = [];
 let trailClock = 0;
@@ -138,7 +139,7 @@ function start() {
   airLift = 0; stalled = false; airVX = 0; airVY = 0;
   cameraDistance = 0; cameraSpeed = 0; angleOfAttack = 0; keys.clear();
   heading = 0; bank = 0; targetBank = 0; crossTrack = 0; hasLifted = false;
-  pitchRate = 0; stallBlend = 0; windReady = false; overspeed = false;
+  pitchRate = 0; stallBlend = 0; stallExposure = 0; stallWarning = false; windReady = false; overspeed = false;
   for (const control of touchControls) { control.pointers.clear(); control.button.classList.remove('held'); }
   localWind = { x: 0, z: 0, up: 0 }; thermals.clear(); trail.length = 0; trailClock = 0;
   ensureThermals();
@@ -335,18 +336,28 @@ function update(dt) {
     } else if (speedAssistActive()) {
       commandedRate = speedAssistRate(flightAngle, aero);
     } else {
-      const trim = (G * Math.cos(flightAngle) / Math.max(2, aero.liftFactor * speed * speed * Math.cos(bank)) - .38) / 4.7;
-      commandedRate = wrapAngle(flightAngle + clamp(trim, -.08, .26) - pitch) * .8;
+      // A glider trims to a stable lift coefficient, not to perfectly level flight
+      // at any speed. A steep turn may initially descend while naturally gaining speed.
+      const trimCL = G / (aero.liftFactor * (aircraft.bestSpeed / 3.6) ** 2);
+      const trim = (trimCL - .38) / 4.7;
+      commandedRate = wrapAngle(flightAngle + trim - pitch) * 3 - pitchRate * .4;
     }
     commandedRate += .025 * Math.sin(t * 2.1 + distance * .013) + weather.ridge * .008;
     pitchRate += (commandedRate - pitchRate) * (1 - Math.exp(-dt * 4));
     angleOfAttack = wrapAngle(pitch - flightAngle);
-    if (!stalled && (speed < stallSpeed() / 3.6 || Math.abs(angleOfAttack) > .32)) stalled = true;
-    else if (stalled && speed > stallSpeed() / 3.6 * 1.12 && Math.abs(angleOfAttack) < .18) stalled = false;
+    const alpha = Math.abs(angleOfAttack);
+    if (speed * 3.6 < warningSpeed() || alpha > .24) stallWarning = true;
+    else if (speed * 3.6 > stallSpeed() * 1.28 && alpha < .20) stallWarning = false;
+    // The bank-adjusted speed is a level-turn reference, not an instant stall trigger.
+    // Short gusts get a warning and a grace period before the forgiving game stall.
+    const critical = speed * 3.6 < aircraft.stall * .95 || alpha > .40;
+    stallExposure = clamp(stallExposure + (critical ? dt : -dt * 2), 0, 1);
+    if (!stalled && (stallExposure >= .6 || speed * 3.6 < aircraft.stall * .65 || alpha > .75)) stalled = true;
+    else if (stalled && speed * 3.6 > aircraft.stall * 1.1 && alpha < .20 && stallExposure < .1) stalled = false;
     stallBlend += (Number(stalled) - stallBlend) * (1 - Math.exp(-dt * 5));
     pitchRate += wrapAngle(flightAngle - pitch) * stallBlend * dt * 2.5;
     pitch = wrapAngle(pitch + pitchRate * dt);
-    if (aircraft.shape === 'canopy') pitch = Math.max(-.55, Math.min(.65, pitch));
+    if (aircraft.shape === 'canopy') pitch = clamp(pitch, -1.35, .65);
     angleOfAttack = wrapAngle(pitch - flightAngle);
     airLift = weather.up;
     const v = Math.max(1, Math.hypot(airVX, airVY));
@@ -375,7 +386,7 @@ function update(dt) {
     if (towing && (height >= 250 || distance >= 770 || phaseTime >= 24)) release();
     const groundHeight = terrainAt(distance);
     if (height <= groundHeight && towing && !hasLifted && distance < 340 && pitch > -.15) {
-      height = 0; airVY = 0; vertical = 0; stalled = false;
+      height = 0; airVY = 0; vertical = 0; stalled = false; stallExposure = 0; stallWarning = false;
     } else if (height <= groundHeight) {
       const runwayContact = onRunway(distance) && Math.abs(crossTrack) < 28;
       const safe = runwayContact && vertical >= -3 && !stalled && Math.abs(bank) < .2 && Math.cos(heading) > .85 && airVX > 0 && speed >= aircraft.stall / 3.6 && speed <= aircraft.stall / 3.6 * 1.75 && pitch > -.12 && pitch < .22;
@@ -406,16 +417,24 @@ function instruments() {
   $('#vario').textContent = `${vertical >= 0 ? '+' : '−'}${Math.abs(vertical).toFixed(1)}`;
   $('#speedDial').setAttribute('aria-label', `Fahrt ${Math.round(speed * 3.6)}, Abriss ${Math.round(stallSpeed())}, Sollfahrt ${Math.round(targetSpeed())} Kilometer pro Stunde`);
   $('#stallGuide').textContent = `▲ Abriss ${Math.round(stallSpeed())}`;
+  $('#warningGuide').textContent = `⚠ ab ${Math.round(warningSpeed())}`;
+  $('#warningGuide').setAttribute('title', `Abriss-Warnbereich unter ${Math.round(warningSpeed())} km/h oder bei hohem Anstellwinkel`);
+  $('#stallWarningBand').innerHTML = gaugeArc(speedNeedleAngle(stallSpeed()), speedNeedleAngle(warningSpeed()), 50, '#ffcc63', 4);
   $('#targetGuide').textContent = `◆ Soll ${Math.round(targetSpeed())} km/h`;
   if (mode !== 'intro') $('#speedAssist').checked = speedHoldEnabled;
   $('#autopilot').setAttribute('aria-pressed', String(speedHoldEnabled));
   $('#autopilot').disabled = mode !== 'flying' || paused || phase === 'rollout';
   $('#autopilot').textContent = speedHoldEnabled ? 'Fahrt-Auto: Ein' : 'Fahrt-Auto · F';
   $('#varioDial').setAttribute('aria-label', `Variometer: ${vertical.toFixed(1)} Meter pro Sekunde`);
+  const warningVisible = mode === 'flying' && phase !== 'rollout' && (phase === 'glide' || height - terrainAt(distance) > 12) && stallWarning && !stalled;
+  const warningState = mode !== 'flying' || phase === 'rollout' ? 'none' : stalled ? 'stall' : warningVisible ? 'warn' : 'none';
+  $('.airspeed').setAttribute('data-warning', warningState);
+  $('#status').setAttribute('data-warning', warningState);
   let status = vertical > .5 ? 'Fahrt wird zu Höhe' : 'Ruhig gleiten';
   if (phase === 'winch') status = height < 10 ? 'Winde zieht an …' : 'Winde · ↓ ziehen / ↑ drücken';
   else if (phase === 'rollout') status = 'Landung · Ausrollen';
   else if (stalled) status = 'Strömungsabriss! Nase runter ↑';
+  else if (warningVisible) status = 'ABRISSWARNUNG · Ziehen lösen, sanft drücken';
   else if (overspeed) status = 'Zu schnell! Vorsichtig abbremsen';
   else if (braking()) status = 'Luftbremse ausgefahren';
   else if (speedAssistActive()) status = `Fahrt-Auto · ${Math.round(targetSpeed())} km/h halten · Kurven selbst steuern`;
@@ -428,9 +447,9 @@ function instruments() {
   const next = distance <= r.end ? Math.max(0, r.start - distance) : r.start + RUNWAY_SPACING - distance;
   $('#bottomHint').textContent = paused ? 'Pause · P zum Weiterfliegen' : phase === 'winch' ? `${aircraft.name} · Winde: ↓ ziehen / ↑ drücken · R: ausklinken · Space: Luftbremse` : `${aircraft.name} · Landebahn: ${Math.round(next)} m · Space: Luftbremse · ${thermalMode === 'easy' ? 'Sichtbare Bärte' : 'Wolken, Hang und Vario beobachten'}`;
   $('#wind').textContent = `Wind ${Math.round(Math.hypot(localWind.x, localWind.z) * 3.6)} km/h · ${localWind.x >= 0 ? '→' : '←'}`;
-  $('#thermalNote').textContent = stalled ? 'Strömungsabriss · Nase senken, Fahrt aufnehmen' : airLift < -1 ? 'Abwind! Lee verlassen und Fahrt halten' : 'Aufwind · mit ← / → gegensteuern und rechtzeitig wenden';
+  $('#thermalNote').textContent = stalled ? 'Strömungsabriss · Nase senken, Fahrt aufnehmen' : warningVisible ? '⚠ Abrisswarnung · Ziehen lösen, sanft drücken' : airLift < -1 ? 'Abwind! Lee verlassen und Fahrt halten' : 'Aufwind · mit ← / → gegensteuern und rechtzeitig wenden';
   $('#release').hidden = mode !== 'flying' || phase !== 'winch';
-  $('#thermalNote').style.opacity = mode === 'flying' && phase === 'glide' && ((thermalMode === 'easy' && Math.abs(airLift) > 1) || stalled) ? 1 : 0;
+  $('#thermalNote').style.opacity = warningVisible || (mode === 'flying' && phase === 'glide' && ((thermalMode === 'easy' && Math.abs(airLift) > 1) || stalled)) ? 1 : 0;
   $('#brake').setAttribute('aria-pressed', String(braking()));
   $('#brake').classList[braking() ? 'add' : 'remove']('held');
   $('#bankReading').textContent = `${Math.abs(Math.round(bank * 180 / Math.PI))}° ${bank < -.02 ? 'links' : bank > .02 ? 'rechts' : 'gerade'}`;

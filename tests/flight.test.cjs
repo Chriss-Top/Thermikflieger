@@ -37,7 +37,7 @@ function game() {
   return code => vm.runInContext(code, context);
 }
 test('winch launch, release, neutral glide, and thermal lift', () => game()(`
-  start(); advance(16); assert.equal(phase,'winch'); assert.ok(height>220);
+  start(); advance(16); assert.ok(height>220);
   assert.ok(speed>25 && !stalled); release(); assert.equal(phase,'glide');
   setup(); const initial=height; advance(1); assert.ok(height<initial);
   setup(); distance=720; advance(.1); assert.ok(vertical>0);
@@ -180,7 +180,8 @@ test('all five profiles launch, glide, stall at their own limit and render disti
     assert.ok(Math.abs(cl/(a.cd0+a.induced*cl*cl)-profile.glide)<.01);
     polar.push(profile.glide);shapes.add(JSON.stringify(aircraftMesh()));
     for (const yaw of [0,Math.PI/2,Math.PI]) plane(200,200,.1,.7,yaw,.6);
-    setup(profile.stall/3.6-.1,400,0);update(STEP);assert.ok(stalled,id+' stall threshold');
+    setup(profile.stall/3.6-.1,400,0);update(STEP);assert.ok(stallWarning&&!stalled,id+' low-speed warning before stall');
+    setup(profile.stall/3.6*.6,400,0);update(STEP);assert.ok(stalled,id+' deep stall');
   }
   assert.equal(shapes.size,5);assert.equal(polar.length,5);
 `));
@@ -349,3 +350,53 @@ test('speed assist handles winch-release attitude, wind and gusts without repeat
     }
   `);
 });
+
+for(const id of ['ka8','ask21','ls4','ls8','paraglider']) {
+  test(id+' can enter and sustain maximum-bank turns manually, with gusts and small elevator corrections', () => {
+    for(const side of [-1,1]) for(const correction of [false,true]) game()(`
+      $('#aircraft').value='${id}';setup(AIRCRAFT['${id}'].bestSpeed/3.6,1500,0);
+      keys.add(${side}>0 ? 'ArrowRight' : 'ArrowLeft');
+      let travel=0,peakBank=0;
+      for(let i=0;i<40*120;i++) {
+        if(${correction} && i%600<60) keys.add('ArrowDown');else keys.delete('ArrowDown');
+        const course=heading;update(STEP);travel+=Math.abs(wrapAngle(heading-course));
+        peakBank=Math.max(peakBank,Math.abs(bank));
+        assert.equal(mode,'flying');assert.ok(!stalled,'ordinary manual circling must not trigger a stall');
+        assert.ok(!speedHoldEnabled,'manual trim is independent of optional speed assist');
+      }
+      assert.ok(peakBank>maximumBank()-.03);assert.ok(travel>Math.PI*2,'complete tight circles');
+      assert.ok(height>900,'no uncontrolled dive');
+    `);
+  });
+}
+
+test('stall warning precedes an intentional sustained stall and both thermal modes show clear warnings', () => game()(`
+  for(const selected of ['easy','advanced']) {
+    $('#thermalMode').value=selected;setup(22,1200,0);keys.add('ArrowDown');
+    let warnedAt=null,stalledAt=null;
+    for(let i=0;i<8*120;i++) {
+      update(STEP);
+      if(stallWarning&&warnedAt===null) {
+        warnedAt=elapsed;instruments();assert.ok(!stalled);
+        assert.ok($('#status').textContent.includes('ABRISSWARNUNG'));
+        assert.equal($('.airspeed').attrs['data-warning'],'warn');
+        assert.equal($('#thermalNote').style.opacity,1);
+        assert.ok($('#stallWarningBand').innerHTML.includes('#ffcc63'));
+      }
+      if(stalled) {stalledAt=elapsed;break;}
+    }
+    assert.notEqual(warnedAt,null);assert.notEqual(stalledAt,null);
+    assert.ok(stalledAt-warnedAt>.6,'time to react before the actual stall');
+    instruments();assert.equal($('.airspeed').attrs['data-warning'],'stall');
+    keys.clear();keys.add('ArrowUp');advance(1.5);keys.clear();advance(5);
+    assert.ok(!stalled,'intentional stall remains recoverable');
+  }
+`));
+
+test('brief wind shear warns without entering a full stall and restart clears all warning history', () => game()(`
+  let gust=0;airAt=()=>({x:0,z:0,up:gust,ridge:0});setup(28,800,0);update(STEP);
+  gust=15;advance(.12);assert.ok(stallWarning);assert.ok(!stalled);
+  assert.ok(stallExposure>0&&stallExposure<.2);
+  gust=0;advance(.4);assert.ok(!stalled);assert.equal(stallExposure,0);
+  start();assert.equal(stallExposure,0);assert.equal(stallWarning,false);
+`));

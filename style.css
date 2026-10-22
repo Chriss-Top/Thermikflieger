@@ -66,3 +66,4 @@ body.playing .cockpit{display:grid}.round-instrument{position:relative;min-width
  .speed-guide{font-size:8px;line-height:12px}.flight-data{top:calc(136px + var(--safe-top) + (100vw - 56px)/3)}.thermal-note{top:calc(208px + var(--safe-top) + (100vw - 56px)/3)}.flight-actions button{font-size:9px;padding:9px}
 }
 @media(max-height:500px) and (max-width:1100px){.speed-guide{font-size:7px;line-height:10px}.flight-data{top:calc(194px + var(--safe-top))}}
+.warning-guide{color:#ffcc63}.airspeed[data-warning="warn"] .bezel{stroke:#ffcc63;stroke-width:3}.airspeed[data-warning="stall"] .bezel{stroke:#ff7864;stroke-width:3}#status[data-warning="warn"]{color:#8a5700;font-weight:600}#status[data-warning="stall"]{color:#ac3e28;font-weight:600}
