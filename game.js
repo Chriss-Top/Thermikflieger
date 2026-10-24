@@ -104,7 +104,7 @@ configure();
 let accumulator = 0, hudClock = 0, previous = null;
 let heading = 0, bank = 0, targetBank = 0, crossTrack = 0, hasLifted = false;
 const worldScale = () => Math.min(2, Math.max(.8, W / 550));
-let radarRight = 24, radarBottom = 134;
+let radarRight = 24, radarBottom = 134, hudSafeTop = 0;
 let W, H, mode = 'intro', paused = false, last = 0, t = 0;
 let elapsed = 0, height = 0, distance = 0, speed = 0, pitch = 0, vertical = 0;
 let airVX = 0, airVY = 0, cameraDistance = 0, cameraSpeed = 0;
@@ -122,7 +122,9 @@ function resize() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
   previous = null;
   if (typeof getComputedStyle === 'function') {
-    radarRight = Math.max(24, (parseFloat(getComputedStyle($('header')).paddingRight) || 0) + 6);
+    const headerStyle = getComputedStyle($('header'));
+    radarRight = Math.max(24, (parseFloat(headerStyle.paddingRight) || 0) + 6);
+    hudSafeTop = Math.max(0, (parseFloat(headerStyle.paddingTop) || 0) - (H <= 500 ? 4 : 12));
     radarBottom = Math.max(134, (parseFloat(getComputedStyle($('#touch')).bottom) || 0) + 120);
   }
   canvas.width = W * dpr; canvas.height = H * dpr;
@@ -472,7 +474,7 @@ function view(alpha = 1) {
   // The aircraft keeps moving vertically, while the camera eases upward at altitude.
   // In portrait, keep the aircraft below the three dials and flight-data strip.
   // The compact landscape panel sits on the right, clear of the aircraft.
-  const minPlaneY = H <= 500 ? 128 : Math.min(H * .68, 266 + (W - 56) / 3);
+  const minPlaneY = H <= 500 ? 118 : Math.min(H * .65, 295 + hudSafeTop);
   const maxRise = mobile ? Math.max(0, Math.min(H * .57, base - minPlaneY)) : H * .57;
   const rise = maxRise * (1 - Math.exp(-h / 290));
   const ground = base + h * Math.min(1.1, W / 650) - rise;
@@ -738,7 +740,7 @@ function drawRadar() {
   const mobile = touchLayout();
   const compact = mobile && H <= 500;
   const size = compact ? 64 : mobile ? 108 : 160;
-  const x = compact ? W - 276 - radarRight - size - 12 : mobile ? W - size - radarRight : 35;
+  const x = compact ? W - 228 - radarRight - size - 12 : mobile ? W - size - radarRight : 35;
   const y = compact ? H - size - 78 : mobile ? Math.max(320, H - size - radarBottom) : H - size - 75;
   const cx = x + size / 2, cy = y + size / 2, zoom = size / 650;
   ctx.save(); ctx.fillStyle = '#fffdf0f2'; ctx.fillRect(x, y, size, size);

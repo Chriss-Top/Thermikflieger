@@ -8,6 +8,8 @@ Ein Segelflugspiel in Seitenansicht mit einfacher 3D-Fluggerätedarstellung: Win
 
 ## Smartphone
 
+Die drei runden Instrumente sitzen kompakt oben rechts. Im Hochformat sind sie rund 30 % kleiner als zuvor, im Querformat nochmals kompakt angeordnet. Eine schmalere Flugdatenanzeige und die angepasste Kamerahöhe lassen mehr vom Flugzeug und der Landschaft frei. Zahlenwerte, Abrisswarnungen und Sollfahrt bleiben sichtbar; die großen Touch-Tasten behalten ihre Bediengröße.
+
 Die Online-Version lässt sich in aktuellen Smartphone-Browsern wie Safari auf iPhone und Chrome auf Android öffnen. Hoch- und Querformat werden unterstützt. Die Bedienung erfolgt über vier große Schaltflächen: Mit einem Daumen **Ziehen / Drücken**, mit dem anderen **Links / Rechts**; beide Eingaben können gleichzeitig gehalten werden. Dazu kommen **Luftbremse** (halten) und **Seil lösen**. Auch Luftbremse, Höhenruder und Kurvensteuerung lassen sich gleichzeitig bedienen.
 
 Aussparungen und der Home-Indikator werden über die sicheren Bildschirmränder berücksichtigt. Bei App-Wechsel, Bildschirmdrehung oder Fokusverlust pausiert das Spiel; mit **Weiter** geht es weiter. Die mobile Darstellung und Mehrfingereingaben wurden in Chromium mit Smartphone-Emulation geprüft. Ein Test auf echten iPhones und Android-Geräten steht noch aus.
