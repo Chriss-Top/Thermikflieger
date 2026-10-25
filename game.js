@@ -3,7 +3,8 @@ const $ = s => document.querySelector(s);
 const canvas = $('#sky'), ctx = canvas.getContext('2d');
 const keys = new Set();
 const G = 9.81, RUNWAY_SPACING = 1700, RUNWAY_LENGTH = 440;
-const STEP = 1 / 120, GAME_TEMPO = 1.8;
+const STEP = 1 / 120, GAME_TEMPO = 1;
+const AIR_DENSITY = 1.225;
 // Representative unballasted game profiles, not certified flight-manual data.
 const AIRCRAFT = {
   ka8: { name: 'Ka 8', span: 15, area: 14.15, mass: 310, stall: 55, bestSpeed: 75, glide: 27, minSink: .65, maxSpeed: 190, roll: 2.7, elevator: .42, brake: .12, color: '#c76c45', shape: 'classic', description: 'Leicht und gutmütig · enge Thermikkreise, wenig Fahrtreserve' },
@@ -15,18 +16,13 @@ const AIRCRAFT = {
 let aircraft = AIRCRAFT.ask21, thermalMode = 'easy', overspeed = false;
 let speedHoldEnabled = false;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
-function maximumBank() { return (aircraft.shape === 'canopy' ? 65 : 75) * Math.PI / 180; }
+function maximumBank() { return (aircraft.shape === 'canopy' ? 45 : 60) * Math.PI / 180; }
 function turnFactor(angle = bank) { return 1 / Math.sqrt(Math.max(.25, Math.cos(angle))); }
 function stallSpeed(angle = bank) { return aircraft.stall * turnFactor(angle); }
 function warningSpeed(angle = bank) { return stallSpeed(angle) * 1.22; }
 function targetSpeed(angle = bank) {
-  // Straight flight uses best glide; a banked thermal turn uses a slower trim
-  // with at least 35% stall reserve, instead of widening the circle unnecessarily.
-  const circleBlend = smooth((Math.abs(angle) - .26) / .7);
-  const circleSpeed = Math.min(aircraft.bestSpeed, aircraft.stall * 1.38);
-  return Math.min(aircraft.maxSpeed * .9, (aircraft.bestSpeed + (circleSpeed - aircraft.bestSpeed) * circleBlend) * turnFactor(angle));
+  return Math.min(aircraft.maxSpeed * .9, aircraft.bestSpeed * turnFactor(angle));
 }
-function turnAgility(angle = bank) { return 1 + (aircraft.shape === 'canopy' ? .4 : 1.6) * smooth((Math.abs(angle) - .44) / .78); }
 function speedAssistActive() { return speedHoldEnabled && mode === 'flying' && phase === 'glide'; }
 function toggleSpeedAssist() {
   if (mode !== 'flying' || paused || phase === 'rollout') return;
@@ -79,7 +75,7 @@ function buildDials() {
   $('#bankScale').innerHTML = marks;
 }
 function aeroProfile() {
-  const liftFactor = .02 * (aircraft.area / aircraft.mass) / (17.95 / 600);
+  const liftFactor = .5 * AIR_DENSITY * aircraft.area / aircraft.mass;
   const optimalCL = G / (liftFactor * (aircraft.bestSpeed / 3.6) ** 2);
   return { liftFactor, cd0: optimalCL / (2 * aircraft.glide), induced: 1 / (2 * aircraft.glide * optimalCL) };
 }
@@ -87,7 +83,7 @@ function speedAssistRate(flightAngle, aero) {
   // Elevator-only speed control: trade height for airspeed, without adding energy.
   const v = Math.max(1, speed), cosBank = Math.max(.25, Math.cos(bank));
   const levelCL = G * Math.cos(flightAngle) / (aero.liftFactor * v * v * cosBank);
-  const drag = aero.liftFactor * v * v * (aero.cd0 + aero.induced * levelCL ** 2 + .025 * Math.sin(bank) ** 2);
+  const drag = aero.liftFactor * v * v * (aero.cd0 + aero.induced * levelCL ** 2);
   const desiredPath = Math.asin(clamp(((v - targetSpeed() / 3.6) * .45 - drag) / G, -.5, .4));
   const pathRate = wrapAngle(desiredPath - flightAngle) * 2.5;
   const requiredCL = (G * Math.cos(flightAngle) + v * pathRate) / (aero.liftFactor * v * v * cosBank);
@@ -97,6 +93,17 @@ function speedAssistRate(flightAngle, aero) {
 }
 function controlAuthority(v = speed) {
   return Math.min(1.8, Math.max(0, (v / (aircraft.bestSpeed / 3.6)) ** 2));
+}
+function neutralTrimRate(flightAngle, aero) {
+  const trimmedSpeed = targetSpeed() / 3.6;
+  const trimCL = G / (aero.liftFactor * (aircraft.bestSpeed / 3.6) ** 2);
+  const trimAlpha = (trimCL - .38) / 4.7;
+  // A damped restoring pitch moment gives natural speed stability. It only
+  // changes the nose; gravity, lift and drag must do all the acceleration.
+  const speedMoment = .14 * clamp((speed - trimmedSpeed) / trimmedSpeed, -.3, .5);
+  const pathDamping = -.08 * (flightAngle + Math.atan(1 / aircraft.glide));
+  const alpha = clamp(trimAlpha + speedMoment + pathDamping, -.08, .24);
+  return wrapAngle(flightAngle + alpha - pitch) * 2.2 - pitchRate * .55;
 }
 const braking = () => mode === 'flying' && !paused && keys.has('Space');
 function configure() {
@@ -317,15 +324,15 @@ function update(dt) {
     // Buttons command roll acceleration, not a bank angle. Release damps the
     // remaining roll; weak natural levelling requires timed taps to keep a circle.
     wingLiftDifference = wingAirDifference();
-    const gustTorque = clamp(wingLiftDifference / aircraft.span * 6 * (aircraft.roll / 3.5) * clamp(speed / (aircraft.bestSpeed / 3.6), .3, 1.6), -.8, .8);
+    const gustTorque = clamp(wingLiftDifference / aircraft.span * 2.5 * (aircraft.roll / 3.5) * clamp(speed / (aircraft.bestSpeed / 3.6), .3, 1.6), -.22, .22);
     let bankLimit = maximumBank();
     if (speedAssistActive()) {
       // Gain the necessary speed before steepening, rather than forcing a stall.
       const available = stalled ? 0 : Math.acos(Math.min(1, (aircraft.stall * 1.22 / Math.max(1, speed * 3.6)) ** 2));
       bankLimit = Math.min(bankLimit, available);
     }
-    const acceleration = turning * aircraft.roll * Math.min(1.35, controlAuthority()) + gustTorque - rollRate * 4.4 - bank * .45;
-    rollRate = clamp(rollRate + acceleration * dt, -1.4, 1.4);
+    const acceleration = turning * aircraft.roll * .55 * Math.min(1.25, controlAuthority()) + gustTorque - rollRate * 4.4 - bank * .45;
+    rollRate = clamp(rollRate + acceleration * dt, -.5, .5);
     bank += rollRate * dt;
     if (Math.abs(bank) > bankLimit) {
       // A speed-limited assist rolls out smoothly instead of snapping the wing.
@@ -333,11 +340,6 @@ function update(dt) {
       if (Math.sign(rollRate) === Math.sign(bank)) rollRate *= Math.exp(-dt * 12);
       if (speedAssistActive()) rollRate -= Math.sign(bank) * (Math.abs(bank) - bankLimit) * dt * 6;
     }
-    // World z points away from the observer. Positive heading is a left turn;
-    // positive bank lowers the pilot's right wing and turns clockwise in the map.
-    // Deliberately more agile than the training model for small, skill-based
-    // thermal circles. The gain fades away in shallow turns and on rollout.
-    heading = wrapAngle(heading - G * Math.tan(bank) * turnAgility() / Math.max(aircraft.stall / 3.6, Math.abs(airVX)) * dt);
   }
   if (phase === 'rollout') {
     rollRate = 0; wingLiftDifference = 0;
@@ -356,6 +358,7 @@ function update(dt) {
       airVY -= weather.up - localWind.up;
     }
     localWind = weather; windReady = true;
+    const previousAirVX = airVX, previousAirVY = airVY;
     speed = Math.hypot(airVX, airVY);
     const flightAngle = Math.atan2(airVY, airVX);
     const authority = controlAuthority();
@@ -368,11 +371,7 @@ function update(dt) {
     } else if (speedAssistActive()) {
       commandedRate = speedAssistRate(flightAngle, aero);
     } else {
-      // A glider trims to a stable lift coefficient, not to perfectly level flight
-      // at any speed. A steep turn may initially descend while naturally gaining speed.
-      const trimCL = G / (aero.liftFactor * (aircraft.bestSpeed / 3.6) ** 2);
-      const trim = (trimCL - .38) / 4.7;
-      commandedRate = wrapAngle(flightAngle + trim - pitch) * 3 - pitchRate * .4;
+      commandedRate = neutralTrimRate(flightAngle, aero);
     }
     commandedRate += .025 * Math.sin(t * 2.1 + distance * .013) + weather.ridge * .008;
     pitchRate += (commandedRate - pitchRate) * (1 - Math.exp(-dt * 4));
@@ -396,9 +395,10 @@ function update(dt) {
     const ux = airVX / v, uy = airVY / v;
     const maxCL = G / (aero.liftFactor * (aircraft.stall / 3.6) ** 2);
     const cl = Math.max(-maxCL, Math.min(maxCL, .38 + 4.7 * angleOfAttack)) * (1 - .92 * stallBlend);
-    const lift = aero.liftFactor * v * v * cl * Math.cos(bank);
+    const totalLift = aero.liftFactor * v * v * cl;
+    const lift = totalLift * Math.cos(bank);
     overspeed = v * 3.6 > aircraft.maxSpeed;
-    const drag = aero.liftFactor * v * v * (aero.cd0 + aero.induced * cl * cl + .025 * Math.sin(bank) ** 2 + stallBlend * .15 + (braking() ? aircraft.brake : 0) + (overspeed ? .08 : 0));
+    const drag = aero.liftFactor * v * v * (aero.cd0 + aero.induced * cl * cl + stallBlend * .15 + (braking() ? aircraft.brake : 0) + (overspeed ? .08 : 0));
     airVX += (-drag * ux - lift * uy) * dt;
     airVY += (-G - drag * uy + lift * ux) * dt;
     if (towing) {
@@ -411,9 +411,17 @@ function update(dt) {
     }
     speed = Math.hypot(airVX, airVY);
     vertical = airVY + weather.up;
-    height += vertical * dt;
-    distance += (airVX * Math.cos(heading) + weather.x) * dt;
-    crossTrack += (airVX * Math.sin(heading) + weather.z) * dt;
+    // Only the lateral lift bends the horizontal velocity vector. In a level,
+    // coordinated turn this reduces to omega = g*tan(bank)/v; a stalled wing
+    // cannot keep turning at that rate. Gravity stays vertical in world space.
+    const horizontalSpeed = (previousAirVX + airVX) * .5;
+    const denominator = (horizontalSpeed < 0 ? -1 : 1) * Math.max(5, Math.abs(horizontalSpeed));
+    const headingChange = towing ? 0 : -totalLift * Math.sin(bank) / denominator * dt;
+    const midHeading = heading + headingChange * .5;
+    heading = wrapAngle(heading + headingChange);
+    height += ((previousAirVY + airVY) * .5 + weather.up) * dt;
+    distance += (horizontalSpeed * Math.cos(midHeading) + weather.x) * dt;
+    crossTrack += (horizontalSpeed * Math.sin(midHeading) + weather.z) * dt;
     if (height - terrainAt(distance) > 2) hasLifted = true;
     if (towing && (height >= 250 || distance >= 770 || phaseTime >= 24)) release();
     const groundHeight = terrainAt(distance);
@@ -479,7 +487,7 @@ function instruments() {
   const next = distance <= r.end ? Math.max(0, r.start - distance) : r.start + RUNWAY_SPACING - distance;
   $('#bottomHint').textContent = paused ? 'Pause · P zum Weiterfliegen' : phase === 'winch' ? `${aircraft.name} · Winde: ↓ ziehen / ↑ drücken · R: ausklinken · Space: Luftbremse` : `${aircraft.name} · Landebahn: ${Math.round(next)} m · Space: Luftbremse · ${thermalMode === 'easy' ? 'Sichtbare Bärte' : 'Wolken, Hang und Vario beobachten'}`;
   $('#wind').textContent = `Wind ${Math.round(Math.hypot(localWind.x, localWind.z) * 3.6)} km/h · ${localWind.x >= 0 ? '→' : '←'}`;
-  $('#thermalNote').textContent = stalled ? 'Strömungsabriss · Nase senken, Fahrt aufnehmen' : warningVisible ? '⚠ Abrisswarnung · Ziehen lösen, sanft drücken' : airLift < -1 ? 'Abwind! Lee verlassen und Fahrt halten' : 'Aufwind · kurz einrollen, loslassen, mit Gegenimpulsen halten';
+  $('#thermalNote').textContent = stalled ? 'Strömungsabriss · Nase senken, Fahrt aufnehmen' : warningVisible ? '⚠ Abrisswarnung · Ziehen lösen, sanft drücken' : airLift < -1 ? 'Abwind! Lee verlassen und Fahrt halten' : 'Aufwind · sanft einrollen, loslassen, bei Bedarf gegensteuern';
   $('#release').hidden = mode !== 'flying' || phase !== 'winch';
   $('#thermalNote').style.opacity = warningVisible || (mode === 'flying' && phase === 'glide' && ((thermalMode === 'easy' && Math.abs(airLift) > 1) || stalled)) ? 1 : 0;
   $('#brake').setAttribute('aria-pressed', String(braking()));
@@ -798,7 +806,7 @@ function drawRadar() {
   ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-5, -5); ctx.lineTo(-2, 0); ctx.lineTo(-5, 5); ctx.closePath(); ctx.fill();
   ctx.restore(); ctx.fillStyle = '#385d4e'; ctx.font = mobile ? '8px sans-serif' : '9px sans-serif';
   ctx.fillText(thermalMode === 'advanced' ? 'FLUGSPUR · WIND' : `${compact ? 'LUFT' : 'THERMIKRADAR'} · ${airLift.toFixed(1)} m/s`, x, y - 9);
-  ctx.fillText(mobile ? '↶ / ↷ kurz tippen' : '↶ / ↷ Impulse · früh loslassen', x, y + size + (compact ? 11 : 15));
+  ctx.fillText(mobile ? '↶ / ↷ einrollen' : 'Sanft einrollen · früh loslassen', x, y + size + (compact ? 11 : 15));
 }
 function frame(now) {
   const dt = Math.min((now - last) / 1000 || 0, .1); last = now;

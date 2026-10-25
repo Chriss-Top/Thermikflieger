@@ -111,13 +111,13 @@ test('rolling has inertia, release damps roll and countersteering reverses manua
   setup(28,500);crossTrack=180;heading=1;
   const course=heading;advance(2);assert.ok(Math.abs(heading-course)<.1,'no automatic return to route');
   assert.ok(crossTrack>180);
-  keys.add('ArrowLeft');advance(1);keys.clear();assert.ok(bank<-.6);
-  keys.add('ArrowRight');advance(2.3);keys.clear();assert.ok(bank>.6);
+  keys.add('ArrowLeft');advance(2);keys.clear();assert.ok(bank<-.5);
+  keys.add('ArrowRight');advance(4);keys.clear();assert.ok(bank>.5);
   const releasedRate=rollRate;advance(.6);const coastingBank=bank;
   assert.ok(Math.abs(rollRate)<Math.abs(releasedRate),'release brakes the rolling motion');
   advance(1.5);
   assert.ok(bank>.35&&bank<coastingBank,'after coasting the circle gradually opens without snapping level');
-  keys.add('ArrowLeft');advance(.8);keys.clear();advance(.3);
+  keys.add('ArrowLeft');advance(1.8);keys.clear();advance(.3);
   assert.ok(bank<.2,'opposite input actively rolls out');
   assert.equal(typeof toggleCircle,'undefined');
 `));
@@ -241,11 +241,11 @@ test('left and right commands turn from the pilot perspective in all four headin
   airAt=()=>({x:0,z:0,up:0,ridge:0});
   for(const course of [0,Math.PI/2,Math.PI,-Math.PI/2]) for(const side of [-1,1]) {
     setup(28,500,0);heading=course;const x=distance,z=crossTrack;
-    keys.add(side>0 ? 'ArrowRight' : 'ArrowLeft');advance(.7);
+    keys.add(side>0 ? 'ArrowRight' : 'ArrowLeft');advance(1.2);
     assert.ok(wrapAngle(heading-course)*side < -.025,'course turns toward commanded side');
     const rightward=(distance-x)*Math.sin(course)-(crossTrack-z)*Math.cos(course);
     assert.ok(rightward*side>.2,'motion is to the pilot side, independent of observer');
-    assert.ok(bank*side>.3,'commanded wing is lowered smoothly');
+    assert.ok(bank*side>.25,'commanded wing is lowered smoothly');
   }
   for(const yaw of [0,Math.PI]) {
     const flatRight=projectAircraft([0,-60,0],0,yaw,0),right=projectAircraft([0,-60,0],0,yaw,.5);
@@ -416,8 +416,8 @@ test('uneven updrafts lift the correct wing and initiate pilot-relative turns in
     const initialPitch=pitch;update(STEP);
     assert.ok(rollRate*strongerLeft>0,'left updraft rolls right, right updraft rolls left');
     assert.ok(Math.abs(bank)<.001,'no bank teleport');assert.ok(Math.abs(pitch-initialPitch)<.01);
-    advance(.7);assert.ok(bank*strongerLeft>.04);
-    assert.ok(wrapAngle(heading-course)*strongerLeft<-.003,'turn follows the roll without key input');
+    advance(.7);assert.ok(bank*strongerLeft>.01);
+    assert.ok(wrapAngle(heading-course)*strongerLeft<-.0005,'turn follows the roll without key input');
     assert.equal(keys.size,0);
   }
 `));
@@ -437,7 +437,7 @@ test('well-timed pulses hold intermediate steep banks and releasing alone gradua
   for(const id of ['ka8','ask21','ls4','ls8','paraglider']) {
     $('#aircraft').value=id;$('#speedAssist').checked=true;
     airAt=()=>({x:0,z:0,up:0,ridge:0});setup(AIRCRAFT[id].bestSpeed/3.6,2000,0);
-    const desired=(id==='paraglider'?50:60)*Math.PI/180;
+    const desired=(id==='paraglider'?35:45)*Math.PI/180;
     let switches=0,previousCommand=0,releaseCount=0,maxError=0;
     for(let i=0;i<25*120;i++) {
       if(i%18===0) {
@@ -456,18 +456,57 @@ test('well-timed pulses hold intermediate steep banks and releasing alone gradua
   }
 `));
 
-test('steep circles have substantially smaller measured radii than the previous flight model', () => game()(`
-  for(const [id,previousRadius] of [['ka8',48],['ask21',77],['ls4',86],['ls8',94],['paraglider',12.5]]) {
+test('measured coordinated turn radii follow speed squared over gravity times tangent bank', () => game()(`
+  for(const id of ['ka8','ask21','ls4','ls8','paraglider']) {
     $('#aircraft').value=id;$('#speedAssist').checked=true;
     airAt=()=>({x:0,z:0,up:0,ridge:0});setup(AIRCRAFT[id].bestSpeed/3.6,2500,0);keys.add('ArrowRight');
-    let length=0,turn=0;
+    let length=0,turn=0,referenceRadius=0,samples=0;
     for(let i=0;i<45*120;i++) {
       const x=distance,z=crossTrack,course=heading;update(STEP);
       assert.ok(!stalled&&mode==='flying');
-      if(i>25*120){length+=Math.hypot(distance-x,crossTrack-z);turn+=Math.abs(wrapAngle(heading-course));}
+      if(i>25*120){
+        length+=Math.hypot(distance-x,crossTrack-z);turn+=Math.abs(wrapAngle(heading-course));
+        referenceRadius+=airVX*airVX/(G*Math.tan(Math.abs(bank)));samples++;
+      }
     }
-    assert.ok(length/turn<previousRadius*.5,id+' circle radius must more than halve');
+    const expected=referenceRadius/samples;
+    assert.ok(Math.abs(length/turn-expected)/expected<.06,id+' physical coordinated turn radius');
   }
+`));
+
+for(const id of ['ka8','ask21','ls4','ls8','paraglider']) {
+  test(id+' naturally returns toward best glide from slow and fast entry without the autopilot', () => {
+    for(const ratio of [.85,1.3]) game()(`
+      $('#aircraft').value='${id}';airAt=()=>({x:0,z:0,up:0,ridge:0});
+      const p=AIRCRAFT['${id}'];setup(p.bestSpeed/3.6*${ratio},2000,0);
+      const initialEnergy=G*height+speed*speed/2;let maximumError=0;
+      for(let i=0;i<90*120;i++) {
+        update(STEP);assert.ok(!stalled&&mode==='flying');assert.ok(!speedHoldEnabled);
+        if(i>60*120)maximumError=Math.max(maximumError,Math.abs(speed*3.6-p.bestSpeed));
+      }
+      assert.ok(maximumError<p.bestSpeed*.025,'damped convergence from both sides');
+      assert.ok(G*height+speed*speed/2<initialEnergy,'gravity and drag, no injected energy');
+    `);
+  });
+}
+
+test('gravity accelerates all masses down at 9.81 and absent lift cannot bend the flight path', () => game()(`
+  airAt=()=>({x:0,z:0,up:0,ridge:0});
+  for(const id of ['ka8','ask21','ls4','ls8','paraglider']) {
+    $('#aircraft').value=id;setup(20,500,0);bank=.6;keys.add('ArrowUp');
+    aeroProfile=()=>({liftFactor:0,cd0:0,induced:0});
+    const initialEnergy=G*height+speed*speed/2;advance(1);
+    assert.ok(Math.abs(airVY+9.81)<.000001,'world gravity independent of mass and bank');
+    assert.ok(Math.abs(height-(500-9.81/2))<.000001,'parabolic fall over one second');
+    assert.ok(Math.abs(airVX-20)<.000001);assert.ok(Math.abs(heading)<.000001,'no fictitious gravity turn');
+    assert.ok(Math.abs(G*height+speed*speed/2-initialEnergy)<.000001,'potential becomes kinetic energy');
+  }
+`));
+
+test('one real-time second advances one simulated second', () => game()(`
+  mode='intro';paused=false;t=0;last=0;accumulator=0;
+  for(let i=1;i<=60;i++)frame(i*1000/60);
+  assert.ok(Math.abs(t-1)<=STEP*1.01,'no hidden acceleration of flight or gravity');
 `));
 
 test('pause and restart preserve and reset roll momentum without stuck inputs', () => game()(`
