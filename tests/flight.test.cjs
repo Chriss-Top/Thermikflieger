@@ -106,13 +106,19 @@ test('elevator steers the winch launch and releasing preserves momentum', () => 
   pull(`const momentum=JSON.stringify([airVX,airVY,pitch,height]);release();
     assert.equal(phase,'glide');assert.equal(JSON.stringify([airVX,airVY,pitch,height]),momentum);`);
 });
-test('turning is held-input only, reversals are manual and no route autopilot remains', () => game()(`
+test('rolling has inertia, release damps roll and countersteering reverses manually', () => game()(`
+  airAt=()=>({x:0,z:0,up:0,ridge:0});
   setup(28,500);crossTrack=180;heading=1;
   const course=heading;advance(2);assert.ok(Math.abs(heading-course)<.1,'no automatic return to route');
   assert.ok(crossTrack>180);
   keys.add('ArrowLeft');advance(1);keys.clear();assert.ok(bank<-.6);
-  keys.add('ArrowRight');advance(1);keys.clear();assert.ok(bank>.6);
-  const held=bank;advance(1.5);assert.ok(Math.abs(bank)<.1,'released steering does not keep circling');
+  keys.add('ArrowRight');advance(2.3);keys.clear();assert.ok(bank>.6);
+  const releasedRate=rollRate;advance(.6);const coastingBank=bank;
+  assert.ok(Math.abs(rollRate)<Math.abs(releasedRate),'release brakes the rolling motion');
+  advance(1.5);
+  assert.ok(bank>.35&&bank<coastingBank,'after coasting the circle gradually opens without snapping level');
+  keys.add('ArrowLeft');advance(.8);keys.clear();advance(.3);
+  assert.ok(bank<.2,'opposite input actively rolls out');
   assert.equal(typeof toggleCircle,'undefined');
 `));
 test('thermal strength fades with age, stops at cloud base, and expired cores never respawn', () => game()(`
@@ -239,7 +245,7 @@ test('left and right commands turn from the pilot perspective in all four headin
     assert.ok(wrapAngle(heading-course)*side < -.025,'course turns toward commanded side');
     const rightward=(distance-x)*Math.sin(course)-(crossTrack-z)*Math.cos(course);
     assert.ok(rightward*side>.2,'motion is to the pilot side, independent of observer');
-    assert.ok(bank*side>.6,'commanded wing is lowered');
+    assert.ok(bank*side>.3,'commanded wing is lowered smoothly');
   }
   for(const yaw of [0,Math.PI]) {
     const flatRight=projectAircraft([0,-60,0],0,yaw,0),right=projectAircraft([0,-60,0],0,yaw,.5);
@@ -399,4 +405,74 @@ test('brief wind shear warns without entering a full stall and restart clears al
   assert.ok(stallExposure>0&&stallExposure<.2);
   gust=0;advance(.4);assert.ok(!stalled);assert.equal(stallExposure,0);
   start();assert.equal(stallExposure,0);assert.equal(stallWarning,false);
+`));
+
+test('uneven updrafts lift the correct wing and initiate pilot-relative turns in every heading', () => game()(`
+  for(const course of [0,Math.PI/2,Math.PI,-Math.PI/2]) for(const strongerLeft of [-1,1]) {
+    airAt=()=>({x:0,z:0,up:0,ridge:0});setup(28,1000,0);heading=course;
+    const originX=distance,originZ=crossTrack;
+    airAt=(x,h,z=crossTrack)=>({x:0,z:0,ridge:0,up:strongerLeft*.2*((z-originZ)*Math.cos(course)-(x-originX)*Math.sin(course))});
+    const differential=wingAirDifference();assert.ok(differential*strongerLeft>2);
+    const initialPitch=pitch;update(STEP);
+    assert.ok(rollRate*strongerLeft>0,'left updraft rolls right, right updraft rolls left');
+    assert.ok(Math.abs(bank)<.001,'no bank teleport');assert.ok(Math.abs(pitch-initialPitch)<.01);
+    advance(.7);assert.ok(bank*strongerLeft>.04);
+    assert.ok(wrapAngle(heading-course)*strongerLeft<-.003,'turn follows the roll without key input');
+    assert.equal(keys.size,0);
+  }
+`));
+
+test('actual thermal gradients push the glider away from the lifted wing; uniform lift does not invent roll', () => game()(`
+  setup(28,300,0);const core=thermalCore(0,720);
+  distance=core.x;crossTrack=core.z-core.radius*.55;
+  assert.ok(wingAirDifference()>.3);advance(.5);assert.ok(bank>0&&heading<0);
+  start();phase='glide';speed=28;airVX=28;height=300;distance=720;
+  const other=thermalCore(0,720);crossTrack=other.z+other.radius*.55;
+  assert.ok(wingAirDifference()<-.3);advance(.5);assert.ok(bank<0&&heading>0);
+  airAt=()=>({x:0,z:0,up:3,ridge:0});setup(28,1000,0);advance(2);
+  assert.equal(wingLiftDifference,0);assert.equal(bank,0);assert.equal(rollRate,0);assert.equal(heading,0);
+`));
+
+test('well-timed pulses hold intermediate steep banks and releasing alone gradually opens the circle', () => game()(`
+  for(const id of ['ka8','ask21','ls4','ls8','paraglider']) {
+    $('#aircraft').value=id;$('#speedAssist').checked=true;
+    airAt=()=>({x:0,z:0,up:0,ridge:0});setup(AIRCRAFT[id].bestSpeed/3.6,2000,0);
+    const desired=(id==='paraglider'?50:60)*Math.PI/180;
+    let switches=0,previousCommand=0,releaseCount=0,maxError=0;
+    for(let i=0;i<25*120;i++) {
+      if(i%18===0) {
+        const predicted=bank+rollRate*.25;
+        const command=predicted<desired-.035 ? 1 : predicted>desired+.035 ? -1 : 0;
+        keys.delete('ArrowLeft');keys.delete('ArrowRight');
+        if(command)keys.add(command>0?'ArrowRight':'ArrowLeft');else releaseCount++;
+        if(command!==previousCommand)switches++;previousCommand=command;
+      }
+      update(STEP);assert.ok(!stalled&&mode==='flying',id);
+      if(i>8*120)maxError=Math.max(maxError,Math.abs(bank-desired));
+    }
+    assert.ok(maxError<.15,id+' held bank with timed taps');
+    assert.ok(switches>8&&releaseCount>8,id+' must pulse and release rather than latch a circle');
+    keys.clear();const held=bank;advance(3);assert.ok(bank<held-.1&&bank>0,id+' natural rollout');
+  }
+`));
+
+test('steep circles have substantially smaller measured radii than the previous flight model', () => game()(`
+  for(const [id,previousRadius] of [['ka8',48],['ask21',77],['ls4',86],['ls8',94],['paraglider',12.5]]) {
+    $('#aircraft').value=id;$('#speedAssist').checked=true;
+    airAt=()=>({x:0,z:0,up:0,ridge:0});setup(AIRCRAFT[id].bestSpeed/3.6,2500,0);keys.add('ArrowRight');
+    let length=0,turn=0;
+    for(let i=0;i<45*120;i++) {
+      const x=distance,z=crossTrack,course=heading;update(STEP);
+      assert.ok(!stalled&&mode==='flying');
+      if(i>25*120){length+=Math.hypot(distance-x,crossTrack-z);turn+=Math.abs(wrapAngle(heading-course));}
+    }
+    assert.ok(length/turn<previousRadius*.5,id+' circle radius must more than halve');
+  }
+`));
+
+test('pause and restart preserve and reset roll momentum without stuck inputs', () => game()(`
+  setup();keys.add('ArrowRight');advance(.4);assert.ok(rollRate>0);
+  togglePause();const frozen=JSON.stringify([bank,heading,rollRate,wingLiftDifference]);advance(2);
+  assert.equal(JSON.stringify([bank,heading,rollRate,wingLiftDifference]),frozen);
+  start();assert.equal(rollRate,0);assert.equal(wingLiftDifference,0);assert.equal(bank,0);assert.equal(keys.size,0);
 `));

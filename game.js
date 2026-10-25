@@ -15,11 +15,18 @@ const AIRCRAFT = {
 let aircraft = AIRCRAFT.ask21, thermalMode = 'easy', overspeed = false;
 let speedHoldEnabled = false;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
-function maximumBank() { return (aircraft.shape === 'canopy' ? 55 : 65) * Math.PI / 180; }
+function maximumBank() { return (aircraft.shape === 'canopy' ? 65 : 75) * Math.PI / 180; }
 function turnFactor(angle = bank) { return 1 / Math.sqrt(Math.max(.25, Math.cos(angle))); }
 function stallSpeed(angle = bank) { return aircraft.stall * turnFactor(angle); }
 function warningSpeed(angle = bank) { return stallSpeed(angle) * 1.22; }
-function targetSpeed(angle = bank) { return Math.min(aircraft.maxSpeed * .9, aircraft.bestSpeed * turnFactor(angle)); }
+function targetSpeed(angle = bank) {
+  // Straight flight uses best glide; a banked thermal turn uses a slower trim
+  // with at least 35% stall reserve, instead of widening the circle unnecessarily.
+  const circleBlend = smooth((Math.abs(angle) - .26) / .7);
+  const circleSpeed = Math.min(aircraft.bestSpeed, aircraft.stall * 1.38);
+  return Math.min(aircraft.maxSpeed * .9, (aircraft.bestSpeed + (circleSpeed - aircraft.bestSpeed) * circleBlend) * turnFactor(angle));
+}
+function turnAgility(angle = bank) { return 1 + (aircraft.shape === 'canopy' ? .4 : 1.6) * smooth((Math.abs(angle) - .44) / .78); }
 function speedAssistActive() { return speedHoldEnabled && mode === 'flying' && phase === 'glide'; }
 function toggleSpeedAssist() {
   if (mode !== 'flying' || paused || phase === 'rollout') return;
@@ -65,7 +72,7 @@ function buildDials() {
   for (let n = -25; n <= 25; n++) marks += gaugeTick(varioNeedleAngle(n / 5), n % 5 === 0, n % 5 === 0 ? Math.abs(n / 5) : undefined);
   $('#varioScale').innerHTML = marks;
   marks = '';
-  for (const angle of [-65,-60,-45,-30,-20,-10,0,10,20,30,45,60,65]) {
+  for (const angle of [-75,-65,-60,-45,-30,-20,-10,0,10,20,30,45,60,65,75]) {
     const a = gaugePoint(angle, 49), b = gaugePoint(angle, Math.abs(angle) % 30 === 0 ? 56 : 53);
     marks += `<path d="M${a} L${b}" stroke="#f5f0d8" stroke-width="1.2"/>`;
   }
@@ -102,7 +109,7 @@ function configure() {
 $('#aircraft').onchange = $('#thermalMode').onchange = configure;
 configure();
 let accumulator = 0, hudClock = 0, previous = null;
-let heading = 0, bank = 0, targetBank = 0, crossTrack = 0, hasLifted = false;
+let heading = 0, bank = 0, rollRate = 0, wingLiftDifference = 0, crossTrack = 0, hasLifted = false;
 const worldScale = () => Math.min(2, Math.max(.8, W / 550));
 let radarRight = 24, radarBottom = 134, hudSafeTop = 0;
 let W, H, mode = 'intro', paused = false, last = 0, t = 0;
@@ -140,7 +147,7 @@ function start() {
   elapsed = 0; height = 0; distance = 0; speed = 0; pitch = 0; vertical = 0;
   airLift = 0; stalled = false; airVX = 0; airVY = 0;
   cameraDistance = 0; cameraSpeed = 0; angleOfAttack = 0; keys.clear();
-  heading = 0; bank = 0; targetBank = 0; crossTrack = 0; hasLifted = false;
+  heading = 0; bank = 0; rollRate = 0; wingLiftDifference = 0; crossTrack = 0; hasLifted = false;
   pitchRate = 0; stallBlend = 0; stallExposure = 0; stallWarning = false; windReady = false; overspeed = false;
   for (const control of touchControls) { control.pointers.clear(); control.button.classList.remove('held'); }
   localWind = { x: 0, z: 0, up: 0 }; thermals.clear(); trail.length = 0; trailClock = 0;
@@ -205,12 +212,12 @@ for (const [id, key] of [['left', 'ArrowDown'], ['right', 'ArrowUp'], ['bankLeft
   b.oncontextmenu = e => e.preventDefault();
 }
 $('#release').onclick = () => { release(); canvas.focus?.({ preventScroll: true }); };
-function windAt(x, h, time = t) {
+function windAt(x, h, time = t, z = 0) {
   const exposure = smooth(Math.max(0, h - terrainAt(x)) / 45);
   return {
     x: exposure * (3.4 + 1.5 * Math.sin(time * .16) + .65 * Math.sin(x * .009 + time * .83)),
     z: exposure * (1.5 * Math.sin(time * .11 + .5) + .8 * Math.sin(x * .006 - time * .47)),
-    up: exposure * (.5 * Math.sin(x * .019 + time * 1.3) + .35 * Math.sin(time * 2.1 - x * .011))
+    up: exposure * (.5 * Math.sin(x * .019 + z * .023 + time * 1.3) + .35 * Math.sin(time * 2.1 - x * .011 + z * .017))
   };
 }
 function terrainAt(x) {
@@ -247,9 +254,20 @@ function thermalLife(core, time = t) {
   return smooth(age / 8) * smooth((core.lifetime - age) / 15);
 }
 function airAt(x, h, z = crossTrack) {
-  const wind = windAt(x, h);
+  const wind = windAt(x, h, t, z);
   const ridge = ridgeLiftAt(x, h, wind);
   return { x: wind.x, z: wind.z, up: wind.up + ridge + thermalAt(x, z, h), ridge };
+}
+function wingAirDifference() {
+  // Sample both wings in world space. Local +y is the pilot's left wing:
+  // a stronger updraft there produces positive (right) roll in every heading.
+  const y = aircraft.span * .4 * Math.cos(bank), z = aircraft.span * .4 * Math.sin(bank);
+  const x = -z * Math.sin(pitch), up = z * Math.cos(pitch);
+  const wx = x * Math.cos(heading) - y * Math.sin(heading);
+  const wz = x * Math.sin(heading) + y * Math.cos(heading);
+  const left = airAt(distance + wx, height + up, crossTrack + wz).up;
+  const right = airAt(distance - wx, height - up, crossTrack - wz).up;
+  return left - right;
 }
 function formatTime(n) { return `${Math.floor(n / 60).toString().padStart(2, '0')}:${Math.floor(n % 60).toString().padStart(2, '0')}`; }
 function runwayAt(x) {
@@ -296,21 +314,33 @@ function update(dt) {
     speedHoldEnabled = false;
   }
   if (phase === 'glide') {
-    // Only held input commands a turn. No latched bank, circling mode or route autopilot.
-    const rollGust = .035 * Math.sin(t * 1.7 + distance * .014) + .025 * Math.sin(t * 2.9);
+    // Buttons command roll acceleration, not a bank angle. Release damps the
+    // remaining roll; weak natural levelling requires timed taps to keep a circle.
+    wingLiftDifference = wingAirDifference();
+    const gustTorque = clamp(wingLiftDifference / aircraft.span * 6 * (aircraft.roll / 3.5) * clamp(speed / (aircraft.bestSpeed / 3.6), .3, 1.6), -.8, .8);
     let bankLimit = maximumBank();
     if (speedAssistActive()) {
       // Gain the necessary speed before steepening, rather than forcing a stall.
       const available = stalled ? 0 : Math.acos(Math.min(1, (aircraft.stall * 1.22 / Math.max(1, speed * 3.6)) ** 2));
       bankLimit = Math.min(bankLimit, available);
     }
-    targetBank = clamp(turning * maximumBank() + rollGust, -bankLimit, bankLimit);
-    bank += (targetBank - bank) * (1 - Math.exp(-dt * aircraft.roll * controlAuthority()));
+    const acceleration = turning * aircraft.roll * Math.min(1.35, controlAuthority()) + gustTorque - rollRate * 4.4 - bank * .45;
+    rollRate = clamp(rollRate + acceleration * dt, -1.4, 1.4);
+    bank += rollRate * dt;
+    if (Math.abs(bank) > bankLimit) {
+      // A speed-limited assist rolls out smoothly instead of snapping the wing.
+      if (Math.abs(bank) > maximumBank()) bank = Math.sign(bank) * maximumBank();
+      if (Math.sign(rollRate) === Math.sign(bank)) rollRate *= Math.exp(-dt * 12);
+      if (speedAssistActive()) rollRate -= Math.sign(bank) * (Math.abs(bank) - bankLimit) * dt * 6;
+    }
     // World z points away from the observer. Positive heading is a left turn;
     // positive bank lowers the pilot's right wing and turns clockwise in the map.
-    heading = wrapAngle(heading - G * Math.tan(bank) / Math.max(aircraft.stall / 3.6, Math.abs(airVX)) * dt);
+    // Deliberately more agile than the training model for small, skill-based
+    // thermal circles. The gain fades away in shallow turns and on rollout.
+    heading = wrapAngle(heading - G * Math.tan(bank) * turnAgility() / Math.max(aircraft.stall / 3.6, Math.abs(airVX)) * dt);
   }
   if (phase === 'rollout') {
+    rollRate = 0; wingLiftDifference = 0;
     vertical = 0; pitch *= Math.exp(-dt * 3); speed = Math.max(0, speed - dt * 6);
     airVX = speed; airVY = 0; distance += airVX * dt;
     if (speed <= 0) finish(true);
@@ -449,7 +479,7 @@ function instruments() {
   const next = distance <= r.end ? Math.max(0, r.start - distance) : r.start + RUNWAY_SPACING - distance;
   $('#bottomHint').textContent = paused ? 'Pause · P zum Weiterfliegen' : phase === 'winch' ? `${aircraft.name} · Winde: ↓ ziehen / ↑ drücken · R: ausklinken · Space: Luftbremse` : `${aircraft.name} · Landebahn: ${Math.round(next)} m · Space: Luftbremse · ${thermalMode === 'easy' ? 'Sichtbare Bärte' : 'Wolken, Hang und Vario beobachten'}`;
   $('#wind').textContent = `Wind ${Math.round(Math.hypot(localWind.x, localWind.z) * 3.6)} km/h · ${localWind.x >= 0 ? '→' : '←'}`;
-  $('#thermalNote').textContent = stalled ? 'Strömungsabriss · Nase senken, Fahrt aufnehmen' : warningVisible ? '⚠ Abrisswarnung · Ziehen lösen, sanft drücken' : airLift < -1 ? 'Abwind! Lee verlassen und Fahrt halten' : 'Aufwind · mit ← / → gegensteuern und rechtzeitig wenden';
+  $('#thermalNote').textContent = stalled ? 'Strömungsabriss · Nase senken, Fahrt aufnehmen' : warningVisible ? '⚠ Abrisswarnung · Ziehen lösen, sanft drücken' : airLift < -1 ? 'Abwind! Lee verlassen und Fahrt halten' : 'Aufwind · kurz einrollen, loslassen, mit Gegenimpulsen halten';
   $('#release').hidden = mode !== 'flying' || phase !== 'winch';
   $('#thermalNote').style.opacity = warningVisible || (mode === 'flying' && phase === 'glide' && ((thermalMode === 'easy' && Math.abs(airLift) > 1) || stalled)) ? 1 : 0;
   $('#brake').setAttribute('aria-pressed', String(braking()));
@@ -768,7 +798,7 @@ function drawRadar() {
   ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-5, -5); ctx.lineTo(-2, 0); ctx.lineTo(-5, 5); ctx.closePath(); ctx.fill();
   ctx.restore(); ctx.fillStyle = '#385d4e'; ctx.font = mobile ? '8px sans-serif' : '9px sans-serif';
   ctx.fillText(thermalMode === 'advanced' ? 'FLUGSPUR · WIND' : `${compact ? 'LUFT' : 'THERMIKRADAR'} · ${airLift.toFixed(1)} m/s`, x, y - 9);
-  ctx.fillText(compact ? '← / → Pilotensicht' : mobile ? '← / → Pilotensicht' : '← / → Pilotensicht · Wind beachten', x, y + size + (compact ? 11 : 15));
+  ctx.fillText(mobile ? '↶ / ↷ kurz tippen' : '↶ / ↷ Impulse · früh loslassen', x, y + size + (compact ? 11 : 15));
 }
 function frame(now) {
   const dt = Math.min((now - last) / 1000 || 0, .1); last = now;
