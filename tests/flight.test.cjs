@@ -121,6 +121,22 @@ test('rolling has inertia, release damps roll and countersteering reverses manua
   assert.ok(bank<.2,'opposite input actively rolls out');
   assert.equal(typeof toggleCircle,'undefined');
 `));
+test('responsive roll reaches thermal banks quickly with bounded inertia on every aircraft', () => game()(`
+  airAt=()=>({x:0,z:0,up:0,ridge:0});
+  for(const id of Object.keys(AIRCRAFT)) for(const side of [-1,1]) {
+    $('#aircraft').value=id;setup(AIRCRAFT[id].bestSpeed/3.6,2000,0);
+    const key=side>0?'ArrowRight':'ArrowLeft';keys.add(key);update(STEP);
+    assert.ok(Math.abs(bank)<.002,id+' rolls continuously without snapping');
+    advance(2-STEP);
+    assert.ok(bank*side>(id==='paraglider'?25:50)*Math.PI/180,id+' prompt roll-in at cruise speed');
+    assert.ok(Math.abs(rollRate)<=.8,id+' bounded roll rate');
+    advance(4);
+    const limit=(id==='paraglider'?50:65)*Math.PI/180;
+    assert.ok(Math.abs(bank-limit*side)<.001,id+' reaches the slightly steeper bank limit');
+    assert.ok(!stalled,id+' safe roll-in without elevator input');
+  }
+`));
+
 test('thermal strength fades with age, stops at cloud base, and expired cores never respawn', () => game()(`
   setup();const core=thermalCore(0,720);
   assert.ok(thermalAt(core.x,core.z,250)>thermalAt(core.x,core.z+130,250)+3);

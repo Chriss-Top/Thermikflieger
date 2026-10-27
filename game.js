@@ -23,7 +23,7 @@ const AIRCRAFT = {
 let aircraft = AIRCRAFT.ask21, thermalMode = 'easy', overspeed = false;
 let speedHoldEnabled = false;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
-function maximumBank() { return (aircraft.shape === 'canopy' ? 45 : 60) * Math.PI / 180; }
+function maximumBank() { return (aircraft.shape === 'canopy' ? 50 : 65) * Math.PI / 180; }
 function turnFactor(angle = bank) { return 1 / Math.sqrt(Math.max(.25, Math.cos(angle))); }
 function stallSpeed(angle = bank) { return aircraft.stall * turnFactor(angle); }
 function warningSpeed(angle = bank) { return stallSpeed(angle) * 1.22; }
@@ -338,8 +338,8 @@ function update(dt) {
       const available = stalled ? 0 : Math.acos(Math.min(1, (aircraft.stall * 1.22 / Math.max(1, speed * 3.6)) ** 2));
       bankLimit = Math.min(bankLimit, available);
     }
-    const acceleration = turning * aircraft.roll * .55 * Math.min(1.25, controlAuthority()) + gustTorque - rollRate * 4.4 - bank * .45;
-    rollRate = clamp(rollRate + acceleration * dt, -.5, .5);
+    const acceleration = turning * aircraft.roll * .95 * Math.min(1.25, controlAuthority()) + gustTorque - rollRate * 4.4 - bank * .45;
+    rollRate = clamp(rollRate + acceleration * dt, -.8, .8);
     bank += rollRate * dt;
     if (Math.abs(bank) > bankLimit) {
       // A speed-limited assist rolls out smoothly instead of snapping the wing.
