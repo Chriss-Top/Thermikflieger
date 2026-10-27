@@ -149,7 +149,7 @@ test('thermal strength fades with age, stops at cloud base, and expired cores ne
 `));
 test('wind advects the glider and thermal core and varies smoothly over time', () => {
   const withWind=game(),stillAir=game();
-  const position=(run,x,z)=>run(`airAt=()=>({x:${x},z:${z},up:0,ridge:0});setup(28,500);advance(1);[distance,crossTrack];`);
+  const position=(run,x,z)=>run(`airAt=()=>({x:${x},z:${z},up:0,ridge:0});setup(28,500);heading=.5;advance(1);[distance,crossTrack];`);
   const windy=position(withWind,5,2),still=position(stillAir,0,0);
   assert.ok(windy[0]-still[0]>4.8);assert.ok(windy[1]-still[1]>1.8);
   game()(`setup();const core=thermalCore(0,720),oldX=core.x;advance(1);assert.ok(core.x>oldX+1);
@@ -498,6 +498,7 @@ for(const id of ['ka8','ask21','ls4','ls8','paraglider']) {
       const initialEnergy=G*height+speed*speed/2;let maximumError=0;
       for(let i=0;i<90*120;i++) {
         update(STEP);assert.ok(!stalled&&mode==='flying');assert.ok(!speedHoldEnabled);
+        if(i===15*120) assert.ok(Math.abs(speed*3.6-p.bestSpeed)<p.bestSpeed*.03,'prompt straight-flight trim recovery');
         if(i>60*120)maximumError=Math.max(maximumError,Math.abs(speed*3.6-p.bestSpeed));
       }
       assert.ok(maximumError<p.bestSpeed*.025,'damped convergence from both sides');
@@ -540,6 +541,42 @@ test('tempo button cycles without changing flight state or clearing controls', (
   togglePause();last=0;accumulator=0;
   for(let i=1;i<=60;i++)frame(i*1000/60);
   assert.equal(JSON.stringify([height,speed,pitch,bank,heading,rollRate]),before);
+`));
+
+test('elevator responds promptly in both directions and release restores best glide without speed hold', () => game()(`
+  airAt=()=>({x:0,z:0,up:0,ridge:0});
+  for(const id of Object.keys(AIRCRAFT)) for(const side of [-1,1]) {
+    $('#aircraft').value=id;setup(AIRCRAFT[id].bestSpeed/3.6,2000,0);
+    keys.add(side>0?'ArrowDown':'ArrowUp');advance(.25);
+    assert.ok(pitchRate*side>aircraft.elevator*.8,id+' prompt pitch response');
+    assert.ok(Math.abs(pitch)<.15,id+' no pitch snap');
+    keys.clear();advance(15);
+    assert.ok(Math.abs(speed*3.6-aircraft.bestSpeed)<aircraft.bestSpeed*.03,id+' hands-off best glide');
+    assert.ok(!stalled&&!speedHoldEnabled,id+' safe recovery independent of optional autopilot');
+  }
+`));
+
+test('straight flight returns gently to centerline from either side without bank or heading changes', () => game()(`
+  for(const side of [-1,1]) for(const course of [0,Math.PI]) {
+    airAt=()=>({x:0,z:side*2,up:0,ridge:0});setup(28,2000,0);
+    heading=course;crossTrack=side*40;
+    update(STEP);assert.ok(Math.abs(crossTrack-side*40)<=3*STEP+.000001,'bounded drift without a position jump');
+    advance(25);
+    assert.ok(Math.abs(crossTrack)<4,'centers even with crosswind');
+    assert.ok(Math.abs(wrapAngle(heading-course))<.000001,'no automatic return turn');
+    assert.equal(bank,0);assert.equal(rollRate,0);
+  }
+`));
+
+test('centerline help leaves circling, cross-track flight and final approach under pilot control', () => game()(`
+  airAt=()=>({x:0,z:2,up:0,ridge:0});setup(28,2000,0);crossTrack=50;
+  keys.add('ArrowRight');update(STEP);
+  assert.ok(crossTrack>50,'turn input immediately releases centering');keys.clear();
+  bank=.4;assert.equal(centerlineAssist(0),0);
+  bank=0;rollRate=0;heading=Math.PI/2;const before=crossTrack;advance(.5);
+  assert.ok(crossTrack>before+10,'no sideways correction across the track');
+  setup(28,30,0);crossTrack=0;update(STEP);
+  assert.ok(crossTrack>0,'no landing alignment correction near ground');
 `));
 
 test('pause and restart preserve and reset roll momentum without stuck inputs', () => game()(`

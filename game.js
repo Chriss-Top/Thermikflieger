@@ -86,13 +86,13 @@ function aeroProfile() {
   const optimalCL = G / (liftFactor * (aircraft.bestSpeed / 3.6) ** 2);
   return { liftFactor, cd0: optimalCL / (2 * aircraft.glide), induced: 1 / (2 * aircraft.glide * optimalCL) };
 }
-function speedAssistRate(flightAngle, aero) {
+function speedAssistRate(flightAngle, aero, speedGain = .45, pathGain = 2.5) {
   // Elevator-only speed control: trade height for airspeed, without adding energy.
   const v = Math.max(1, speed), cosBank = Math.max(.25, Math.cos(bank));
   const levelCL = G * Math.cos(flightAngle) / (aero.liftFactor * v * v * cosBank);
   const drag = aero.liftFactor * v * v * (aero.cd0 + aero.induced * levelCL ** 2);
-  const desiredPath = Math.asin(clamp(((v - targetSpeed() / 3.6) * .45 - drag) / G, -.5, .4));
-  const pathRate = wrapAngle(desiredPath - flightAngle) * 2.5;
+  const desiredPath = Math.asin(clamp(((v - targetSpeed() / 3.6) * speedGain - drag) / G, -.5, .4));
+  const pathRate = wrapAngle(desiredPath - flightAngle) * pathGain;
   const requiredCL = (G * Math.cos(flightAngle) + v * pathRate) / (aero.liftFactor * v * v * cosBank);
   let alpha = clamp((requiredCL - .38) / 4.7, -.16, .25);
   if (stalled || v * 3.6 < stallSpeed() * 1.08) alpha = -.05;
@@ -110,7 +110,17 @@ function neutralTrimRate(flightAngle, aero) {
   const speedMoment = .14 * clamp((speed - trimmedSpeed) / trimmedSpeed, -.3, .5);
   const pathDamping = -.08 * (flightAngle + Math.atan(1 / aircraft.glide));
   const alpha = clamp(trimAlpha + speedMoment + pathDamping, -.08, .24);
-  return wrapAngle(flightAngle + alpha - pitch) * 2.2 - pitchRate * .55;
+  const restoring = wrapAngle(flightAngle + alpha - pitch) * 2.2 - pitchRate * .55;
+  // In straight flight, damp the long pitch/speed oscillation after release.
+  // As in the optional speed hold, only elevator moments change, never energy.
+  const straightness = 1 - smooth(Math.abs(bank) / .35);
+  return restoring * (1 - straightness) + speedAssistRate(flightAngle, aero, .22, 1.6) * straightness;
+}
+function centerlineAssist(turning) {
+  if (phase !== 'glide' || turning || stalled || braking() || height - terrainAt(distance) < 35) return 0;
+  // A forgiving game aid: gently slide toward the runway track only when
+  // flying along it with level wings. Never bank or steer into a return turn.
+  return smooth(1 - Math.abs(bank) / .15) * smooth(1 - Math.abs(rollRate) / .15) * smooth(1 - Math.abs(Math.sin(heading)) / .2);
 }
 const braking = () => mode === 'flying' && !paused && keys.has('Space');
 function configure() {
@@ -371,7 +381,7 @@ function update(dt) {
     const authority = controlAuthority();
     const aero = aeroProfile();
     let commandedRate;
-    if (elevator) commandedRate = elevator * (towing ? Math.min(.35, aircraft.elevator) : aircraft.elevator) * authority;
+    if (elevator) commandedRate = elevator * (towing ? Math.min(.35, aircraft.elevator) : aircraft.elevator * 1.3) * authority;
     else if (towing) {
       const launchTrim = Math.min(.72, flightAngle + (height < 2 ? .10 : .08));
       commandedRate = wrapAngle(launchTrim - pitch) * 2.5;
@@ -381,7 +391,7 @@ function update(dt) {
       commandedRate = neutralTrimRate(flightAngle, aero);
     }
     commandedRate += .025 * Math.sin(t * 2.1 + distance * .013) + weather.ridge * .008;
-    pitchRate += (commandedRate - pitchRate) * (1 - Math.exp(-dt * 4));
+    pitchRate += (commandedRate - pitchRate) * (1 - Math.exp(-dt * (elevator && !towing ? 6 : 4)));
     angleOfAttack = wrapAngle(pitch - flightAngle);
     const alpha = Math.abs(angleOfAttack);
     if (speed * 3.6 < warningSpeed() || alpha > .24) stallWarning = true;
@@ -428,7 +438,9 @@ function update(dt) {
     heading = wrapAngle(heading + headingChange);
     height += ((previousAirVY + airVY) * .5 + weather.up) * dt;
     distance += (horizontalSpeed * Math.cos(midHeading) + weather.x) * dt;
-    crossTrack += (horizontalSpeed * Math.sin(midHeading) + weather.z) * dt;
+    const lateralSpeed = horizontalSpeed * Math.sin(midHeading) + weather.z;
+    const centering = centerlineAssist(turning);
+    crossTrack += (lateralSpeed * (1 - centering) - clamp(crossTrack * .12, -3, 3) * centering) * dt;
     if (height - terrainAt(distance) > 2) hasLifted = true;
     if (towing && (height >= 250 || distance >= 770 || phaseTime >= 24)) release();
     const groundHeight = terrainAt(distance);
