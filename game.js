@@ -3,7 +3,14 @@ const $ = s => document.querySelector(s);
 const canvas = $('#sky'), ctx = canvas.getContext('2d');
 const keys = new Set();
 const G = 9.81, RUNWAY_SPACING = 1700, RUNWAY_LENGTH = 440;
-const STEP = 1 / 120, GAME_TEMPO = 1;
+const STEP = 1 / 120;
+let gameTempo = 2;
+function changeTempo() {
+  gameTempo = gameTempo === 3 ? 1 : gameTempo + 1;
+  $('#tempo').textContent = `Tempo ${gameTempo}×`;
+  $('#tempo').setAttribute('aria-label', `Spieltempo ${gameTempo}-fach. Klicken zum Wechseln.`);
+}
+$('#tempo').onclick = changeTempo;
 const AIR_DENSITY = 1.225;
 // Representative unballasted game profiles, not certified flight-manual data.
 const AIRCRAFT = {
@@ -810,7 +817,9 @@ function drawRadar() {
 }
 function frame(now) {
   const dt = Math.min((now - last) / 1000 || 0, .1); last = now;
-  accumulator += dt * GAME_TEMPO;
+  // Accelerate the whole world with unchanged, small physics steps. Forces,
+  // trim and turn radii stay consistent at every playback speed.
+  accumulator += dt * gameTempo;
   while (accumulator >= STEP) {
     previous = renderState(); update(STEP); accumulator -= STEP;
   }

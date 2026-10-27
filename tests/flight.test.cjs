@@ -503,10 +503,27 @@ test('gravity accelerates all masses down at 9.81 and absent lift cannot bend th
   }
 `));
 
-test('one real-time second advances one simulated second', () => game()(`
-  mode='intro';paused=false;t=0;last=0;accumulator=0;
+test('default double tempo and selectable tempo advance the whole simulation consistently', () => game()(`
+  assert.equal(gameTempo,2);
+  for(const tempo of [1,2,3]) for(const fps of [30,60,120]) {
+    gameTempo=tempo;mode='intro';paused=false;t=0;last=0;accumulator=0;
+    for(let i=1;i<=fps;i++)frame(i*1000/fps);
+    assert.ok(Math.abs(t-tempo)<=STEP*1.01,'tempo independent of rendering frequency');
+  }
+`));
+
+test('tempo button cycles without changing flight state or clearing controls', () => game()(`
+  setup();keys.add('ArrowRight');advance(.3);
+  const before=JSON.stringify([height,speed,pitch,bank,heading,rollRate]);
+  for(const tempo of [3,1,2]) {
+    $('#tempo').onclick();assert.equal(gameTempo,tempo);
+    assert.equal($('#tempo').textContent,'Tempo '+tempo+'×');
+    assert.equal(JSON.stringify([height,speed,pitch,bank,heading,rollRate]),before);
+    assert.ok(keys.has('ArrowRight'));
+  }
+  togglePause();last=0;accumulator=0;
   for(let i=1;i<=60;i++)frame(i*1000/60);
-  assert.ok(Math.abs(t-1)<=STEP*1.01,'no hidden acceleration of flight or gravity');
+  assert.equal(JSON.stringify([height,speed,pitch,bank,heading,rollRate]),before);
 `));
 
 test('pause and restart preserve and reset roll momentum without stuck inputs', () => game()(`

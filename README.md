@@ -6,6 +6,10 @@ Ein Segelflugspiel in Seitenansicht mit einfacher 3D-Fluggerätedarstellung: Win
 
 `index.html` im Browser öffnen oder `python3 -m http.server 8000` im Projektverzeichnis starten. HTML, CSS und JavaScript müssen im selben Ordner liegen. Webfonts sind optional; Ersatzschriften funktionieren offline.
 
+## Spieltempo
+
+Standardmäßig läuft das Spiel mit **2× Tempo**: Windenstart, Streckenflug und Höhengewinn gehen schneller voran. Über **Tempo** oben im Bildschirm wechselst du jederzeit zwischen **1×, 2× und 3×**, auch auf dem Smartphone. Die gesamte Welt läuft gemeinsam schneller; kleine, feste Physikschritte erhalten die Kräfte, Kurvenradien, natürliche Fahrttrimmung und Abrissreserven. Instrumente zeigen weiterhin die simulierten km/h und m/s, Flugzeit und Thermikdauer zählen Simulationssekunden. Pause hält bei jedem Tempo den Flug an.
+
 ## Smartphone
 
 Die drei runden Instrumente sitzen kompakt oben rechts. Im Hochformat sind sie rund 30 % kleiner als zuvor, im Querformat nochmals kompakt angeordnet. Eine schmalere Flugdatenanzeige und die angepasste Kamerahöhe lassen mehr vom Flugzeug und der Landschaft frei. Zahlenwerte, Abrisswarnungen und Sollfahrt bleiben sichtbar; die großen Touch-Tasten behalten ihre Bediengröße.
@@ -67,9 +71,9 @@ Die stilisierten 3D-Modelle verwenden maßstäbliche Spannweiten und Rumpflänge
 
 **Fortgeschritten:** Aufwindsäulen, Kernpositionen, Restlebensdauer und genaue Aufwindwerte im Radar entfallen. Quellwolken über aktiven Bärten, sonnenwarme Bodenflächen, die beleuchtete Luvseite und verschattetes Lee geben Hinweise. Einige Hintergrundwolken liefern keine Thermik. Das Variometer zeigt das tatsächliche Steigen oder Sinken, einschließlich Höhengewinn durch Ziehen; anhaltendes Steigen bei gleichbleibender Fahrt spricht für Aufwind. Die Karte zeigt nur die eigene Flugspur, Strecke und Wind. Die Luftfelder und ihre Lebensdauer sind in beiden Modi gleich.
 
-## Echtzeit und flüssige Darstellung
+## Flüssige Darstellung
 
-Das Spiel läuft in **Echtzeit**: eine reale Sekunde entspricht einer Simulationssekunde. Die bisherige 1,8-fache Beschleunigung entfällt, damit Flugbewegung, Böen und Schwerkraft nicht übertrieben schnell wirken. Ein fester Physikschritt mit 120 Hz und interpolierte Flugzeug- und Kamerapositionen sorgen für gleichmäßige Bewegung. Zahlenanzeigen werden mit 10 Hz aktualisiert; die Kamera übernimmt Fahrtänderungen verzögert.
+Die Simulation läuft standardmäßig doppelt so schnell und lässt sich jederzeit auf 1× oder 3× umstellen. Ein fester Physikschritt mit 120 Hz Simulationszeit und interpolierte Flugzeug- und Kamerapositionen sorgen auch im Zeitraffer für gleichmäßige Bewegung. Zahlenanzeigen werden mit 10 Hz aktualisiert; die Kamera übernimmt Fahrtänderungen verzögert.
 
 ## Windenstart steuern
 
@@ -109,13 +113,13 @@ Bei zu geringer Fahrt oder zu großem Anstellwinkel nimmt der Auftrieb zügig ab
 
 ## Prüfen
 
-Mit Node.js: `node --test tests/flight.test.cjs` (oder `node tests/flight.test.cjs` für die einzeln benannten Szenarien). 50 Szenarien prüfen steuerbaren Windenstart, Ausklinken ohne Geschwindigkeitssprung, manuelles Wenden ohne Kreis- oder Streckenautopilot, endliche und höhenbegrenzte Thermik, Windversatz, Hang- und Lee-Felder, Fahrt und Kameranachlauf, Strömungsabriss und Erholung, Loopings, Landungen, Pause und Neustart. Dazu kommen alle fünf Fluggeräte, ihre Polaren und Abrissfahrten, fahrtabhängige Nick- und Rollwirkung, Space/R, gleichzeitige Touch-Brems- und Steuereingaben, Entfernungsprojektion, Schräglage, Horizont-Interpolation und die Hinweise im fortgeschrittenen Modus. Zusätzliche Prüfungen sichern Pilotensicht-Steuerung in vier Flugrichtungen, die richtige Flügelbewegung, Zeigerrichtung und Messbereiche sowie maßstäbliche Flugzeugproportionen und Leitwerkstypen ab. Die Fahrt-Autopilot-Szenarien prüfen alle fünf Fluggeräte über jeweils 60 Simulationssekunden geradeaus und im Steilkreis, ausreichende Abrissreserve, konstante Fahrt ohne Energiezufuhr, Einschalten per Taste/Touch, Vorauswahl, Pause und manuelles Übernehmen. Weitere 50 Sekunden pro Fluggerät sichern den Übergang aus dem Windenstart und Steilkreise in Wind und Böen ab.
+Mit Node.js: `node --test tests/flight.test.cjs` (oder `node tests/flight.test.cjs` für die einzeln benannten Szenarien). 51 Szenarien prüfen steuerbaren Windenstart, Ausklinken ohne Geschwindigkeitssprung, manuelles Wenden ohne Kreis- oder Streckenautopilot, endliche und höhenbegrenzte Thermik, Windversatz, Hang- und Lee-Felder, Fahrt und Kameranachlauf, Strömungsabriss und Erholung, Loopings, Landungen, Pause und Neustart. Dazu kommen alle fünf Fluggeräte, ihre Polaren und Abrissfahrten, fahrtabhängige Nick- und Rollwirkung, Space/R, gleichzeitige Touch-Brems- und Steuereingaben, Entfernungsprojektion, Schräglage, Horizont-Interpolation und die Hinweise im fortgeschrittenen Modus. Zusätzliche Prüfungen sichern Pilotensicht-Steuerung in vier Flugrichtungen, die richtige Flügelbewegung, Zeigerrichtung und Messbereiche sowie maßstäbliche Flugzeugproportionen und Leitwerkstypen ab. Die Fahrt-Autopilot-Szenarien prüfen alle fünf Fluggeräte über jeweils 60 Simulationssekunden geradeaus und im Steilkreis, ausreichende Abrissreserve, konstante Fahrt ohne Energiezufuhr, Einschalten per Taste/Touch, Vorauswahl, Pause und manuelles Übernehmen. Weitere 50 Sekunden pro Fluggerät sichern den Übergang aus dem Windenstart und Steilkreise in Wind und Böen ab.
 
 Chromium-Browserprüfung: 1440×900, 390×844, 844×390 und 360×640; Auswahl, Start, künstlicher Horizont, Tastatur, drei gleichzeitige Touchpunkte und überlappungsfreie Horizont-/Steuerflächen wurden geprüft. Diese Emulation ersetzt keinen Test auf echten Geräten.
 
 Die neuen manuellen Kurventests prüfen alle fünf Fluggeräte jeweils in beiden Richtungen und mit/ohne kurze Höhenruderkorrekturen über 40 Simulationssekunden in Böen, bei voller Schräglage und ausgeschaltetem Fahrt-Autopiloten. Zusätzlich werden die Vorwarnzeit vor einem absichtlich herbeigeführten Abriss, Warnungen in beiden Thermikmodi, Erholung und kurze Windscherung geprüft.
 
-Weitere Prüfungen sichern die Richtung der Flügelanhebung bei vier Flugrichtungen, den Einfluss echter Thermikgradienten, die Ruhe bei gleichmäßigem Aufwind, dosierte Rollimpulse, Ausrollen nach Loslassen und Rollträgheit bei Pause und Neustart. Die Kreisradien werden anhand der physikalischen Beziehung aus Fahrt, Schräglage und Schwerkraft geprüft. Für alle fünf Fluggeräte wird die natürliche Rückkehr zur optimalen Gleitgeschwindigkeit aus langsamer und schneller Ausgangslage ohne Autopilot über 90 Sekunden getestet. Zusätzliche Tests prüfen den massenunabhängigen Fall mit 9,81 m/s², Energieerhaltung im freien Fall, fehlende Kurvenwirkung ohne Auftrieb sowie den Ablauf in Echtzeit.
+Weitere Prüfungen sichern die Richtung der Flügelanhebung bei vier Flugrichtungen, den Einfluss echter Thermikgradienten, die Ruhe bei gleichmäßigem Aufwind, dosierte Rollimpulse, Ausrollen nach Loslassen und Rollträgheit bei Pause und Neustart. Die Kreisradien werden anhand der physikalischen Beziehung aus Fahrt, Schräglage und Schwerkraft geprüft. Für alle fünf Fluggeräte wird die natürliche Rückkehr zur optimalen Gleitgeschwindigkeit aus langsamer und schneller Ausgangslage ohne Autopilot über 90 Sekunden getestet. Zusätzliche Tests prüfen den massenunabhängigen Fall mit 9,81 m/s², Energieerhaltung im freien Fall, fehlende Kurvenwirkung ohne Auftrieb sowie den gleichmäßigen Ablauf bei 1×, 2× und 3×, Tempo-Wechsel ohne Sprünge und Pause bei erhöhtem Tempo.
 
 ## Landen
 

@@ -77,3 +77,7 @@ body.playing .cockpit{display:grid}.round-instrument{position:relative;min-width
 @media(max-height:500px) and (max-width:1100px){
  .cockpit{top:calc(48px + var(--safe-top));width:228px}.dial-readout{font-size:8px}.cockpit .attitude .attitude-readout{font-size:5px}.speed-guide{font-size:6px;line-height:10px}.flight-data{top:calc(150px + var(--safe-top));width:228px;padding:5px 7px}.flight-data strong{font-size:13px}.flight-data p{font-size:8px}
 }
+
+/* Playback speed remains reachable without covering the flight scene. */
+#tempo{min-height:44px;min-width:76px;border:1px solid #234a4940;border-radius:8px;background:#fffdf3c9;color:var(--ink);font:inherit;font-size:11px;padding:6px 10px;white-space:nowrap}
+@media(max-width:1000px){#tempo{margin-left:auto}#pause{margin-left:0}}
