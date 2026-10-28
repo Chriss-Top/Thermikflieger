@@ -113,14 +113,14 @@ function neutralTrimRate(flightAngle, aero) {
   const restoring = wrapAngle(flightAngle + alpha - pitch) * 2.2 - pitchRate * .55;
   // In straight flight, damp the long pitch/speed oscillation after release.
   // As in the optional speed hold, only elevator moments change, never energy.
-  const straightness = 1 - smooth(Math.abs(bank) / .35);
-  return restoring * (1 - straightness) + speedAssistRate(flightAngle, aero, .22, 1.6) * straightness;
+  const straightness = 1 - smooth(Math.abs(bank) / .45);
+  return restoring * (1 - straightness) + speedAssistRate(flightAngle, aero, .4, 2.3) * straightness;
 }
 function centerlineAssist(turning) {
   if (phase !== 'glide' || turning || stalled || braking() || height - terrainAt(distance) < 35) return 0;
   // A forgiving game aid: gently slide toward the runway track only when
   // flying along it with level wings. Never bank or steer into a return turn.
-  return smooth(1 - Math.abs(bank) / .15) * smooth(1 - Math.abs(rollRate) / .15) * smooth(1 - Math.abs(Math.sin(heading)) / .2);
+  return smooth(1 - Math.abs(bank) / .22) * smooth(1 - Math.abs(rollRate) / .22) * smooth(1 - Math.abs(Math.sin(heading)) / .3);
 }
 const braking = () => mode === 'flying' && !paused && keys.has('Space');
 function configure() {
@@ -440,7 +440,7 @@ function update(dt) {
     distance += (horizontalSpeed * Math.cos(midHeading) + weather.x) * dt;
     const lateralSpeed = horizontalSpeed * Math.sin(midHeading) + weather.z;
     const centering = centerlineAssist(turning);
-    crossTrack += (lateralSpeed * (1 - centering) - clamp(crossTrack * .12, -3, 3) * centering) * dt;
+    crossTrack += (lateralSpeed * (1 - centering) - clamp(crossTrack * .3, -6, 6) * centering) * dt;
     if (height - terrainAt(distance) > 2) hasLifted = true;
     if (towing && (height >= 250 || distance >= 770 || phaseTime >= 24)) release();
     const groundHeight = terrainAt(distance);
